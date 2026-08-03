@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<!--docsweep-meta
+type: mockup
+status: planned
+tags: [qa-hub, nextcloud, permission-model, ux]
+owner: ishizakahiroshi
+related: [docs/local/design_nextcloud-tables-qa-hub_2026-07-22.html]
+last_reviewed: 2026-07-22
+docsweep_policy: archive_with_release
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QA hub 統合画面 — 役割別ビュー UI モック — 2026-07-22</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#f7f3ea; --ink:#241f1a; --ink-soft:#837a6c; --line:rgba(36,31,26,0.12);
+    --accent:#ff7a3d; --card:#fffdf8; --ok:#2e7d4f; --warn:#b8860b; --bad:#b3261e;
+    --display:'Baloo 2','Zen Maru Gothic',system-ui,cursive;
+    --body:'Zen Maru Gothic',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--body);color:var(--ink);background:var(--bg);line-height:1.7;
+       text-wrap:pretty;font-size:16px}
+  .wrap{max-width:min(1180px,94vw);margin:0 auto;padding:48px 0 80px}
+  h1{font-family:var(--display);font-weight:800;font-size:2rem;margin:0 0 12px;letter-spacing:-0.01em}
+  h2{font-family:var(--display);font-weight:700;font-size:1.4rem;margin:56px 0 16px;
+     padding-bottom:8px;border-bottom:2px solid var(--ink)}
+  h3{font-family:var(--display);font-weight:700;font-size:1.15rem;margin:28px 0 10px}
+  h4{font-family:var(--display);font-weight:700;font-size:1rem;margin:16px 0 8px}
+  p,li{font-size:0.98rem}
+  a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}
+  .card{background:var(--card);border:2px solid var(--ink);border-radius:18px;
+        padding:22px 24px;box-shadow:4px 5px 0 var(--line);margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff;
+        border:2px solid var(--ink);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);font-size:0.92rem;vertical-align:top}
+  th{background:#fffdf8;font-family:var(--display);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;padding:2px 10px;border-radius:999px;
+       font-family:var(--display);font-weight:700;font-size:0.78rem;
+       border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .tag-ok{background:var(--ok);color:#fff} .tag-warn{background:var(--warn);color:#fff}
+  .tag-bad{background:var(--bad);color:#fff} .tag-accent{background:var(--accent);color:#fff}
+  .system-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;
+                border-radius:999px;border:2px solid var(--ink);background:var(--card);
+                font-family:var(--display);font-weight:700;font-size:0.86rem}
+  .system-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .meta{color:var(--ink-soft);font-size:0.88rem}
+  @media print{ body{background:#fff} .card{box-shadow:none} }
+
+  /* wireframe 用 */
+  .wire{background:#fff;border:2px solid var(--ink);border-radius:14px;padding:0;margin:16px 0;overflow:hidden}
+  .wire-header{background:#fffdf8;border-bottom:2px solid var(--ink);padding:10px 16px;
+               font-family:var(--display);font-weight:700;display:flex;justify-content:space-between;align-items:center;font-size:0.92rem}
+  .wire-body{display:grid;grid-template-columns:220px 1fr;min-height:380px}
+  .wire-side{border-right:2px solid var(--ink);padding:14px;background:#fdfbf5}
+  .wire-side .sec{font-family:var(--display);font-weight:700;font-size:0.78rem;color:var(--ink-soft);
+                  margin:12px 0 6px;text-transform:uppercase;letter-spacing:0.04em}
+  .wire-side ul{list-style:none;padding:0;margin:0}
+  .wire-side li{padding:6px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:4px;
+                font-size:0.86rem;background:#fff}
+  .wire-side li.active{border-color:var(--ink);background:#fff5eb}
+  .wire-side .badge{display:inline-block;background:var(--ink);color:#fff;font-size:0.7rem;
+                    padding:0 6px;border-radius:6px;margin-left:4px}
+  .wire-main{padding:14px}
+  .wire-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .wire-filters span{border:1px solid var(--line);border-radius:6px;padding:2px 10px;font-size:0.8rem;background:#fff}
+  .wire-filters span.on{border-color:var(--ink);background:#fff5eb}
+  .wire-table{width:100%;border-collapse:collapse;font-size:0.82rem}
+  .wire-table th,.wire-table td{border:1px solid var(--line);padding:6px 8px;text-align:left;background:#fff}
+  .wire-table th{background:#fdfbf5;font-family:var(--display);font-weight:700}
+  .wire-empty{border:1px dashed var(--ink-soft);padding:24px;text-align:center;color:var(--ink-soft);
+              font-size:0.86rem;border-radius:6px;margin-top:12px}
+  .wire-note{color:var(--ink-soft);font-size:0.78rem;padding:8px 14px;background:#fdfbf5;border-top:1px solid var(--line)}
+  .role-badge{display:inline-block;background:var(--accent);color:#fff;padding:2px 10px;
+              border-radius:999px;font-family:var(--display);font-weight:700;font-size:0.78rem;
+              border:2px solid var(--ink)}
+
+  /* 画面リスト */
+  .screen-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:16px 0}
+  .screen-list .item{background:#fff;border:2px solid var(--ink);border-radius:12px;padding:14px 16px}
+  .screen-list .id{display:inline-block;background:var(--ink);color:#fff;padding:1px 10px;border-radius:6px;
+                   font-family:var(--display);font-weight:700;font-size:0.8rem;margin-bottom:6px}
+  .screen-list h4{margin:6px 0 4px}
+  .screen-list p{margin:0;color:var(--ink-soft);font-size:0.85rem}
+
+  /* 権限 mapping 表 */
+  .perm-table td.yes{background:#eaf6ee;text-align:center;font-weight:700}
+  .perm-table td.no{background:#f5f0e8;text-align:center;color:var(--ink-soft)}
+  .perm-table td.partial{background:#fef6e0;text-align:center;font-weight:700}
+
+  /* 画面遷移図 */
+  .flow{background:#fff;border:2px solid var(--ink);border-radius:14px;padding:20px;overflow-x:auto}
+  .flow pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.86rem;line-height:1.6;
+            margin:0;white-space:pre}
+
+  /* 未決定事項 */
+  .todo li{list-style:none;padding:8px 0;border-bottom:1px solid var(--line)}
+  .todo li:last-child{border-bottom:0}
+  .todo li::before{content:"☐ ";font-family:var(--display);font-weight:700;color:var(--ink-soft);margin-right:8px}
+  .todo strong{font-family:var(--display);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="system-badge">
+    <span class="dot"></span> 対象: <b>QA hub NC app（全社横断）</b>
+  </div>
+  <h1>QA hub 統合画面 — 役割別ビュー UI モック</h1>
+  <div class="meta">
+    2026-07-22 / owner: ishizakahiroshi / モード: mockup
+    <span class="tag tag-accent" style="margin-left:8px">草案</span>
+  </div>
+
+  <p style="margin-top:20px">
+    QA を投げるだけでは進捗が見えないため、統合ダッシュボード（QA hub NC app）を Nextcloud 上に構築する。
+    <b>権限は NC Group で分離</b>し、関係ないシステム / 顧客のデータは UI に一切出さない（見えるものだけが自分の担当領域）。経営層は全部、部長は担当システム 2 つ、担当者は 1 つ、といった役割別の見え方の差分をこの資料で認識合わせする。
+  </p>
+
+  <h2>画面リスト</h2>
+
+  <div class="screen-list">
+    <div class="item">
+      <span class="id">S-01</span>
+      <h4>経営層ビュー</h4>
+      <p>自社全システム × 全ステータスのダッシュボード。KPI サマリと未対応の山を俯瞰。</p>
+    </div>
+    <div class="item">
+      <span class="id">S-02</span>
+      <h4>部長ビュー</h4>
+      <p>自分が管掌する 2 システムだけ。担当者アサイン・SLA 監視が主用途。</p>
+    </div>
+    <div class="item">
+      <span class="id">S-03</span>
+      <h4>担当者ビュー</h4>
+      <p>自分の 1 システムのみ。自分にアサインされた QA と担当外の一覧に絞る。</p>
+    </div>
+    <div class="item">
+      <span class="id">S-04</span>
+      <h4>顧客一般ユーザービュー</h4>
+      <p>自分が起票した QA のみ。他人の QA は見えない。追記・添付は可能。</p>
+    </div>
+    <div class="item">
+      <span class="id">S-05</span>
+      <h4>Meijie super-admin</h4>
+      <p>Mercury / Timely / 他社の全顧客横断。customer_id フィルタで切り替え。</p>
+    </div>
+    <div class="item">
+      <span class="id">S-06</span>
+      <h4>チケット詳細モーダル</h4>
+      <p>S-01〜S-05 共通。履歴・コメント・添付・状態変更・アサイン変更。</p>
+    </div>
+  </div>
+
+  <h2 id="S-01">S-01: 経営層ビュー（自社全システム俯瞰）</h2>
+
+  <div class="wire">
+    <div class="wire-header">
+      <span>QA hub — 経営層ダッシュボード</span>
+      <span class="role-badge">Role: qa-viewer-mercury-exec</span>
+    </div>
+    <div class="wire-body">
+      <div class="wire-side">
+        <div class="sec">見えるシステム</div>
+        <ul>
+          <li class="active">[全て統合表示]</li>
+          <li>なまけもの<span class="badge">12</span></li>
+          <li>WF<span class="badge">4</span></li>
+          <li>TranChat Mercury<span class="badge">2</span></li>
+        </ul>
+        <div class="sec">保存フィルタ</div>
+        <ul>
+          <li>未対応 直近 30 日</li>
+          <li>SLA 超過警告</li>
+        </ul>
+      </div>
+      <div class="wire-main">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">18</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">未対応</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">7</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">対応中</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">3</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">SLA 超過</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">42</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">今月完了</div>
+          </div>
+        </div>
+        <div class="wire-filters">
+          <span class="on">全システム</span>
+          <span>未対応</span>
+          <span>対応中</span>
+          <span>SLA 超過のみ</span>
+          <span>起票日: 30 日</span>
+        </div>
+        <table class="wire-table">
+          <thead><tr><th>#</th><th>システム</th><th>起票者</th><th>件名</th><th>状態</th><th>担当</th><th>期日</th></tr></thead>
+          <tbody>
+            <tr><td>124</td><td>なまけもの</td><td>肥尾</td><td>全リスト所定内労働時間表示違い</td><td>対応中</td><td>石坂</td><td>-</td></tr>
+            <tr><td>123</td><td>WF</td><td>大山</td><td>承認画面 印刷 崩れ</td><td>未対応</td><td>—</td><td>SLA 2 日</td></tr>
+            <tr><td>122</td><td>なまけもの</td><td>肥尾</td><td>時短勤務者 遅刻早退控除</td><td>完了</td><td>石坂</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="wire-note">経営層は全システム見えるが、customer_id は自社（mercury）のみ。他顧客のデータは表示されない。</div>
+  </div>
+
+  <h2 id="S-02">S-02: 部長ビュー（担当 2 システム）</h2>
+
+  <div class="wire">
+    <div class="wire-header">
+      <span>QA hub — 部長ダッシュボード</span>
+      <span class="role-badge">Role: qa-manager-mer + qa-manager-wf</span>
+    </div>
+    <div class="wire-body">
+      <div class="wire-side">
+        <div class="sec">見えるシステム</div>
+        <ul>
+          <li class="active">なまけもの<span class="badge">12</span></li>
+          <li>WF<span class="badge">4</span></li>
+        </ul>
+        <div class="sec">アクション</div>
+        <ul>
+          <li>担当者アサイン</li>
+          <li>優先度変更</li>
+          <li>状態一括変更</li>
+        </ul>
+      </div>
+      <div class="wire-main">
+        <div class="wire-filters">
+          <span class="on">なまけもの</span>
+          <span>WF</span>
+          <span>未アサイン</span>
+          <span>SLA 警告</span>
+        </div>
+        <table class="wire-table">
+          <thead><tr><th>#</th><th>起票者</th><th>件名</th><th>状態</th><th>担当</th><th>優先度</th><th>期日</th></tr></thead>
+          <tbody>
+            <tr><td>124</td><td>肥尾</td><td>全リスト所定内労働時間 表示違い</td><td>対応中</td><td>石坂</td><td>中</td><td>—</td></tr>
+            <tr><td>121</td><td>藤井</td><td>変形労働 補填 誤計算</td><td>未対応</td><td>—</td><td>高</td><td>SLA 5 日</td></tr>
+            <tr><td>119</td><td>小野</td><td>Excel DL 崩れ</td><td>未対応</td><td>—</td><td>低</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="wire-note">TranChat / 他システムは表示されない（Group 未所属）。サイドバー自体に出ない。</div>
+  </div>
+
+  <h2 id="S-03">S-03: 担当者ビュー（1 システム）</h2>
+
+  <div class="wire">
+    <div class="wire-header">
+      <span>QA hub — 担当者ダッシュボード</span>
+      <span class="role-badge">Role: qa-staff-mer</span>
+    </div>
+    <div class="wire-body">
+      <div class="wire-side">
+        <div class="sec">見えるシステム</div>
+        <ul>
+          <li class="active">なまけもの<span class="badge">12</span></li>
+        </ul>
+        <div class="sec">私のフィルタ</div>
+        <ul>
+          <li class="active">自分にアサイン<span class="badge">5</span></li>
+          <li>未アサイン<span class="badge">4</span></li>
+          <li>チームの対応中<span class="badge">3</span></li>
+        </ul>
+      </div>
+      <div class="wire-main">
+        <div class="wire-filters">
+          <span class="on">自分にアサイン</span>
+          <span>期日順</span>
+          <span>優先度順</span>
+        </div>
+        <table class="wire-table">
+          <thead><tr><th>#</th><th>起票者</th><th>件名</th><th>状態</th><th>優先度</th><th>期日</th></tr></thead>
+          <tbody>
+            <tr><td>124</td><td>肥尾</td><td>全リスト所定内労働時間 表示違い</td><td>対応中</td><td>中</td><td>—</td></tr>
+            <tr><td>118</td><td>肥尾</td><td>Woz 送信 リトライ ログ</td><td>対応中</td><td>低</td><td>—</td></tr>
+            <tr><td>115</td><td>藤井</td><td>時短勤務者 早退控除</td><td>完了</td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="wire-note">自分にアサインされたものと同システム未アサイン枠のみ表示。他システム / 他人の対応中案件は見えない。</div>
+  </div>
+
+  <h2 id="S-04">S-04: 顧客一般ユーザービュー（自分の起票のみ）</h2>
+
+  <div class="wire">
+    <div class="wire-header">
+      <span>QA hub — マイ QA</span>
+      <span class="role-badge">Role: qa-user（default）</span>
+    </div>
+    <div class="wire-body">
+      <div class="wire-side">
+        <div class="sec">私の QA</div>
+        <ul>
+          <li class="active">起票済<span class="badge">6</span></li>
+          <li>対応中<span class="badge">2</span></li>
+          <li>完了<span class="badge">14</span></li>
+        </ul>
+        <div class="sec">アクション</div>
+        <ul>
+          <li>[+] 新規起票</li>
+        </ul>
+      </div>
+      <div class="wire-main">
+        <div class="wire-filters">
+          <span class="on">起票済</span>
+          <span>新しい順</span>
+        </div>
+        <table class="wire-table">
+          <thead><tr><th>#</th><th>システム</th><th>件名</th><th>状態</th><th>最終更新</th></tr></thead>
+          <tbody>
+            <tr><td>124</td><td>なまけもの</td><td>全リスト所定内労働時間 表示違い</td><td>対応中</td><td>2 時間前</td></tr>
+            <tr><td>120</td><td>なまけもの</td><td>Woz 送信ログ 表示位置</td><td>未対応</td><td>昨日</td></tr>
+          </tbody>
+        </table>
+        <div class="wire-empty">他人の QA は表示されません。全体を見たい場合は管理者権限が必要です。</div>
+      </div>
+    </div>
+    <div class="wire-note">起票者本人 + アサインされた対応者のみが該当 QA を見られる。他ユーザーの QA は SQL 段階で除外。</div>
+  </div>
+
+  <h2 id="S-05">S-05: Meijie super-admin ビュー（全顧客横断）</h2>
+
+  <div class="wire">
+    <div class="wire-header">
+      <span>QA hub — Meijie super-hub ダッシュボード</span>
+      <span class="role-badge">Role: qa-admin-meijie</span>
+    </div>
+    <div class="wire-body">
+      <div class="wire-side">
+        <div class="sec">顧客</div>
+        <ul>
+          <li class="active">[全顧客]<span class="badge">31</span></li>
+          <li>Mercury<span class="badge">18</span></li>
+          <li>Timely<span class="badge">9</span></li>
+          <li>他社 A<span class="badge">3</span></li>
+          <li>他社 B<span class="badge">1</span></li>
+        </ul>
+        <div class="sec">システム（顧客選択で変わる）</div>
+        <ul>
+          <li>なまけもの</li>
+          <li>WF</li>
+          <li>TranChat</li>
+        </ul>
+      </div>
+      <div class="wire-main">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">31</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">全顧客 未対応</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">8</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">SLA 超過</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">4</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">顧客数</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">
+            <div style="font-family:var(--display);font-size:1.4rem">7</div>
+            <div style="font-size:0.75rem;color:var(--ink-soft)">対応中システム</div>
+          </div>
+        </div>
+        <div class="wire-filters">
+          <span class="on">全顧客</span>
+          <span>customer_id で group by</span>
+          <span>SLA 超過のみ</span>
+        </div>
+        <table class="wire-table">
+          <thead><tr><th>#</th><th>顧客</th><th>システム</th><th>起票者</th><th>件名</th><th>状態</th><th>担当</th></tr></thead>
+          <tbody>
+            <tr><td>124</td><td>Mercury</td><td>なまけもの</td><td>肥尾</td><td>全リスト表示違い</td><td>対応中</td><td>石坂</td></tr>
+            <tr><td>91</td><td>Timely</td><td>WF</td><td>山田</td><td>承認フロー詰まり</td><td>未対応</td><td>—</td></tr>
+            <tr><td>78</td><td>他社 A</td><td>なまけもの</td><td>佐々木</td><td>Excel エラー</td><td>対応中</td><td>上之薗</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="wire-note">customer_id を全許可。Mercury・Timely・他社を切替表示 or 統合表示。super-hub にのみ集約 opt-in された顧客が対象。</div>
+  </div>
+
+  <h2 id="S-06">S-06: チケット詳細モーダル（全ビュー共通）</h2>
+
+  <div class="wire">
+    <div class="wire-header">
+      <span>QA #124 — 全リスト 所定内労働時間 表示違い</span>
+      <span>状態: 対応中 / 担当: 石坂 / 優先度: 中</span>
+    </div>
+    <div class="wire-body" style="grid-template-columns:1fr 260px">
+      <div class="wire-main">
+        <h4>本文</h4>
+        <div style="border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff;margin-bottom:12px;font-size:0.9rem">
+          全リストページについて、所定労働時間と所定内労働時間が逆になっております。※Excel、Woz への送信も逆になっております。
+        </div>
+        <h4>添付</h4>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <div style="border:1px dashed var(--ink-soft);width:80px;height:80px;display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:var(--ink-soft);border-radius:6px">[画像 1]</div>
+          <div style="border:1px dashed var(--ink-soft);width:80px;height:80px;display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:var(--ink-soft);border-radius:6px">[画像 2]</div>
+        </div>
+        <h4>タイムライン</h4>
+        <table class="wire-table">
+          <tbody>
+            <tr><td>7/21 10:30</td><td>肥尾</td><td>起票</td></tr>
+            <tr><td>7/21 14:00</td><td>石坂</td><td>「対応中」に変更・アサイン</td></tr>
+            <tr><td>7/21 18:34</td><td>石坂</td><td>commit 4be102e で修正、namakemono に反映</td></tr>
+            <tr><td>7/22 09:00</td><td>肥尾</td><td>「namakemono で確認できました」コメント</td></tr>
+          </tbody>
+        </table>
+        <h4>コメント入力</h4>
+        <div style="border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff;height:60px;color:var(--ink-soft);font-size:0.85rem">[コメント入力欄 + 添付 D&D]</div>
+      </div>
+      <div class="wire-side">
+        <div class="sec">メタ情報</div>
+        <ul>
+          <li>システム: なまけもの</li>
+          <li>環境: namakemono</li>
+          <li>版 SHA: <code style="font-size:0.75rem">4be102e</code></li>
+          <li>顧客: Mercury</li>
+          <li>起票: 2026-07-21 10:30</li>
+        </ul>
+        <div class="sec">操作</div>
+        <ul>
+          <li>状態変更 ▼</li>
+          <li>担当者変更 ▼</li>
+          <li>優先度変更 ▼</li>
+          <li>期日設定</li>
+          <li>再オープン</li>
+        </ul>
+      </div>
+    </div>
+    <div class="wire-note">全ビュー共通。表示可否はチケットの customer_id / system_id と閲覧者の Group で決定。編集可否は role で分岐。</div>
+  </div>
+
+  <h2>権限モデル（NC Group 分離）</h2>
+
+  <p>NC の Group 機能で権限を表現する。追加の権限 DB は持たない。Group 命名規則: <code>qa-&lt;role&gt;-&lt;scope&gt;</code>。</p>
+
+  <table class="perm-table">
+    <thead>
+      <tr>
+        <th style="width:22%">Group</th>
+        <th>意味</th>
+        <th style="width:10%">customer_id</th>
+        <th style="width:10%">system_id</th>
+        <th style="width:10%">他人の QA</th>
+        <th style="width:10%">編集</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>qa-admin-meijie</code></td>
+        <td>Meijie super-admin（全顧客横断）</td>
+        <td class="yes">全て</td>
+        <td class="yes">全て</td>
+        <td class="yes">可</td>
+        <td class="yes">可</td>
+      </tr>
+      <tr>
+        <td><code>qa-admin-&lt;customer&gt;</code></td>
+        <td>顧客側 admin（自社全システム）</td>
+        <td class="partial">自社のみ</td>
+        <td class="yes">全て</td>
+        <td class="yes">可</td>
+        <td class="yes">可</td>
+      </tr>
+      <tr>
+        <td><code>qa-viewer-&lt;customer&gt;-exec</code></td>
+        <td>顧客経営層（自社全システム read-only）</td>
+        <td class="partial">自社のみ</td>
+        <td class="yes">全て</td>
+        <td class="yes">可</td>
+        <td class="no">不可</td>
+      </tr>
+      <tr>
+        <td><code>qa-manager-&lt;system&gt;</code></td>
+        <td>特定システム部長</td>
+        <td class="partial">自社のみ</td>
+        <td class="partial">指定分</td>
+        <td class="yes">可</td>
+        <td class="yes">可</td>
+      </tr>
+      <tr>
+        <td><code>qa-staff-&lt;system&gt;</code></td>
+        <td>特定システム担当者</td>
+        <td class="partial">自社のみ</td>
+        <td class="partial">1 つ</td>
+        <td class="partial">同システムのみ</td>
+        <td class="yes">可</td>
+      </tr>
+      <tr>
+        <td>（Group 未所属）</td>
+        <td>一般ユーザー（default: qa-user）</td>
+        <td class="partial">自社のみ</td>
+        <td class="partial">起票済のみ</td>
+        <td class="no">不可</td>
+        <td class="partial">自分の起票のみ</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="meta">複数 Group に所属した場合は <b>権限の和集合</b>（例: 部長 A + 部長 B の 2 兼任 → 両システム見える）。super-admin は customer_id 制約を持たないので、集約 opt-in された全顧客が見える。</p>
+
+  <h2>画面遷移図</h2>
+
+  <div class="flow">
+<pre>
+[NC ログイン] ──OIDC / ローカル──> [NC セッション確立]
+                                        │
+                                        ▼
+                          [QA hub app 起動 / メニューから選択]
+                                        │
+                                        ▼
+                          [権限ロード: 所属 Group から scope 算出]
+                                        │
+             ┌──────────────────────────┼──────────────────────────┐
+             ▼                          ▼                          ▼
+   [経営層/admin]             [部長 / 担当者]                [一般ユーザー]
+   S-01 / S-05                S-02 / S-03                   S-04
+             │                          │                          │
+             └──────────┬───────────────┴──────────┬───────────────┘
+                        ▼                          ▼
+                [チケット一覧]              [+ 新規起票]
+                        │                          │
+                        ▼                          ▼
+                [S-06 詳細モーダル]         [業務システムに戻る or
+                        │                    hub 内起票フォーム]
+                        ▼
+              [状態変更 / コメント / アサイン]
+
+  ─── 起票フロー（別ルート） ───
+
+  [業務システム画面] ── バージョンポップオーバー ──> [qa-mini モーダル]
+                                                          │
+                                                          ▼
+                                             [システム DB に insert]
+                                                          │
+                                                          ▼
+                                        [sab Agent が定期 push (10-30 分)]
+                                                          │
+                                        ┌─────────────────┼─────────────────┐
+                                        ▼                                    ▼
+                              [顧客 hub NC app]                   [Meijie super-hub]
+                                （必ず届く）                  （opt-in 顧客のみ）
+</pre>
+  </div>
+
+  <h2>状態一覧</h2>
+
+  <table>
+    <thead>
+      <tr><th>画面</th><th>初期</th><th>権限読込中</th><th>空</th><th>エラー</th><th>通信失敗</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>S-01 経営層</td>
+        <td>KPI + 一覧表示</td>
+        <td>「権限を読み込み中…」skeleton</td>
+        <td>「該当 QA はありません」</td>
+        <td>「hub API エラー: 再読込」</td>
+        <td>「オフライン / 最終同期 X 分前」バナー</td>
+      </tr>
+      <tr>
+        <td>S-02 部長</td>
+        <td>2 システム表示</td>
+        <td>同上</td>
+        <td>「未対応の QA はありません」</td>
+        <td>同上</td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td>S-03 担当者</td>
+        <td>自分のアサインのみ</td>
+        <td>同上</td>
+        <td>「アサインされた QA はありません」</td>
+        <td>同上</td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td>S-04 一般</td>
+        <td>マイ QA</td>
+        <td>同上</td>
+        <td>「起票した QA はまだありません [+ 新規起票]」</td>
+        <td>同上</td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td>S-05 super-admin</td>
+        <td>全顧客サマリ</td>
+        <td>同上</td>
+        <td>「集約データがありません（顧客 hub 未接続 or 集約 opt-in 顧客なし）」</td>
+        <td>「特定顧客 hub 応答なし: X 社」個別表示</td>
+        <td>「super-hub 同期遅延 X 分」バナー</td>
+      </tr>
+      <tr>
+        <td>S-06 詳細</td>
+        <td>本文 + 履歴</td>
+        <td>—</td>
+        <td>—</td>
+        <td>「このチケットを開けません（権限不足 or 削除済）」</td>
+        <td>「一部読み込み失敗（履歴が古い可能性）」</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>未決定事項</h2>
+
+  <div class="card">
+    <ul class="todo">
+      <li><strong>添付画像の保存先</strong>: NC Files 直接（ACL 継承・プレビュー統合）vs チケット内包 BLOB（app 単独完結）。前者推奨だが権限伝播設計が必要</li>
+      <li><strong>コメントの通知タイミング</strong>: 全変更即時 / 1 時間まとめ / メール daily digest。人によって好みが分かれる、ユーザー設定を持たせるか固定運用か</li>
+      <li><strong>対応者アサインの UI</strong>: drop-down（担当者候補リストから選択）vs @mention（コメント内で自然にアサイン）。運用文化に依存</li>
+      <li><strong>顧客側からの再オープン可否</strong>: 完了済チケットを起票者が再オープンできるか。可にすると SLA 計算が複雑化、不可にすると新規起票が増える</li>
+      <li><strong>モバイル UI</strong>: NC assistant 統合（既存モバイル NC アプリ + AI chat）/ 独立 PWA（QA hub 専用）/ NC モバイルアプリ内 webview（NC 標準）のどれを主導線にするか</li>
+      <li><strong>SLA の定義と可視化</strong>: SLA 何日にする？超過警告の色・タイミング。優先度別に SLA 差をつけるか</li>
+      <li><strong>優先度の運用</strong>: 高 / 中 / 低の 3 段で足りるか。誰が付ける（起票者 / 対応者 / 部長）</li>
+      <li><strong>Group 命名の legal name 対応</strong>: <code>qa-viewer-mercury-exec</code> のような命名で顧客名を直接使うか、顧客 code（<code>c001</code> 等）を使うか。契約上の中立性への配慮</li>
+      <li><strong>集約 opt-in の UI</strong>: 顧客側 admin が Meijie 集約を on/off する画面をどこに置くか（NC 設定画面 / hub app 設定）</li>
+      <li><strong>削除・アーカイブポリシー</strong>: 何年で自動アーカイブか、削除は誰の権限か、監査ログをどう残すか</li>
+    </ul>
+  </div>
+
+  <div class="meta" style="margin-top:32px;padding-top:16px;border-top:2px solid var(--ink)">
+    関連: <a href="design_nextcloud-tables-qa-hub_2026-07-22.html">design_nextcloud-tables-qa-hub_2026-07-22.html</a>（QA hub 全体構想・アーキテクチャ）<br>
+    親 plan md: （未作成、本モックが確定後に起こす）<br>
+    次のアクション: 石坂・上之薗で本モックを review、権限モデル節を経営承認 → plan md 起こし → 実装着手
+  </div>
+
+</div>
+</body>
+</html>

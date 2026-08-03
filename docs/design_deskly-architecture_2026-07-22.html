@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<!--docsweep-meta
+type: design
+status: planned
+tags: [qa, nextcloud, tables, mcp, cross-system]
+owner: ishizakahiroshi
+related: []
+last_reviewed: 2026-07-22
+docsweep_policy: archive_with_release
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nextcloud Tables を全社共通 QA 管理サービスに — 2026-07-22</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#f7f3ea; --ink:#241f1a; --ink-soft:#837a6c; --line:rgba(36,31,26,0.12);
+    --accent:#ff7a3d; --card:#fffdf8; --ok:#2e7d4f; --warn:#b8860b; --bad:#b3261e;
+    --display:'Baloo 2','Zen Maru Gothic',system-ui,cursive;
+    --body:'Zen Maru Gothic',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--body);color:var(--ink);background:var(--bg);line-height:1.7;
+       text-wrap:pretty;font-size:16px}
+  .wrap{max-width:min(1080px,92vw);margin:0 auto;padding:48px 0 80px}
+  h1{font-family:var(--display);font-weight:800;font-size:2rem;margin:0 0 12px;letter-spacing:-0.01em}
+  h2{font-family:var(--display);font-weight:700;font-size:1.4rem;margin:48px 0 16px;
+     padding-bottom:8px;border-bottom:2px solid var(--ink)}
+  h3{font-family:var(--display);font-weight:700;font-size:1.1rem;margin:28px 0 10px}
+  p,li{font-size:1rem}
+  a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}
+  .card{background:var(--card);border:2px solid var(--ink);border-radius:18px;
+        padding:22px 24px;box-shadow:4px 5px 0 var(--line);margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff;
+        border:2px solid var(--ink);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);font-size:0.94rem}
+  th{background:#fffdf8;font-family:var(--display);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;padding:2px 10px;border-radius:999px;
+       font-family:var(--display);font-weight:700;font-size:0.78rem;
+       border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .tag-ok{background:var(--ok);color:#fff} .tag-warn{background:var(--warn);color:#fff}
+  .tag-bad{background:var(--bad);color:#fff} .tag-accent{background:var(--accent);color:#fff}
+  .system-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;
+                border-radius:999px;border:2px solid var(--ink);background:var(--card);
+                font-family:var(--display);font-weight:700;font-size:0.86rem}
+  .system-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .meta{color:var(--ink-soft);font-size:0.88rem}
+  @media print{ body{background:#fff} .card{box-shadow:none} }
+
+  /* 個別追加スタイル */
+  .lede{font-size:1.05rem;background:var(--card);border:2px solid var(--ink);
+        border-radius:18px;padding:20px 24px;box-shadow:4px 5px 0 var(--line);margin:20px 0 8px}
+  .lede b{background:linear-gradient(transparent 60%, rgba(255,122,61,0.35) 60%);padding:0 2px}
+  .hero-flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:14px;align-items:stretch;
+             margin:16px 0}
+  .hero-flow .col{background:#fff;border:2px solid var(--ink);border-radius:14px;padding:14px 16px}
+  .hero-flow .col h4{font-family:var(--display);margin:0 0 8px;font-size:0.95rem}
+  .hero-flow .col ul{margin:0;padding-left:1.1em}
+  .hero-flow .col li{font-size:0.88rem;line-height:1.55}
+  .hero-flow .arrow{align-self:center;font-family:var(--display);font-weight:800;font-size:1.4rem;color:var(--accent)}
+  .hero-flow .col.center-col{background:var(--accent);color:#fff;border-color:var(--ink)}
+  .hero-flow .col.center-col h4{color:#fff}
+  .hero-flow .col.center-col li{color:#fff}
+  .hero-flow .col.center-col .sub{font-size:0.78rem;opacity:0.9;margin-top:6px;color:#fff}
+  @media (max-width: 900px){
+    .hero-flow{grid-template-columns:1fr;grid-template-rows:repeat(5,auto)}
+    .hero-flow .arrow{transform:rotate(90deg);text-align:center}
+  }
+
+  /* バージョンポップオーバー モック */
+  .header-mock{display:flex;align-items:center;justify-content:space-between;
+               background:var(--accent);color:#fff;padding:10px 18px;border:2px solid var(--ink);
+               border-radius:14px;margin:12px 0}
+  .header-mock .left{display:flex;gap:12px;align-items:center;font-family:var(--display);font-weight:700}
+  .header-mock .env-label{background:#fff;color:var(--ink);padding:4px 12px;border-radius:999px;
+                          border:2px solid var(--ink);font-size:0.88rem;cursor:help;position:relative}
+  .header-mock .env-label::after{content:"▲"; position:absolute; left:50%; transform:translateX(-50%);
+                                 top:calc(100% + 4px); color:var(--ink); font-size:12px}
+  .popover{background:#fff;border:2px solid var(--ink);border-radius:14px;
+           box-shadow:6px 6px 0 var(--line);padding:16px 18px;max-width:420px;margin:24px auto 8px;
+           font-size:0.9rem;line-height:1.6}
+  .popover .pop-head{font-family:var(--display);font-weight:800;font-size:1rem;margin-bottom:8px;
+                     border-bottom:1px solid var(--line);padding-bottom:6px}
+  .popover .kv{display:grid;grid-template-columns:88px 1fr;gap:4px 12px;margin-bottom:8px}
+  .popover .kv .k{color:var(--ink-soft);font-size:0.82rem}
+  .popover .kv .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.86rem;word-break:break-all}
+  .popover .subj{background:#fff8ed;border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+                 margin:4px 0 10px;font-size:0.86rem}
+  .popover .btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .popover .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;
+                border:2px solid var(--ink);background:var(--accent);color:#fff;
+                font-family:var(--display);font-weight:700;font-size:0.85rem;text-decoration:none;
+                box-shadow:2px 2px 0 var(--ink)}
+  .popover .btn.secondary{background:#fff;color:var(--ink)}
+  .popover .foot{color:var(--ink-soft);font-size:0.78rem;margin-top:10px;border-top:1px solid var(--line);
+                 padding-top:8px}
+
+  /* 比較表 */
+  .cmp th, .cmp td{vertical-align:top}
+  .cmp .win{background:#eaf6ee}
+  .cmp .lose{background:#fdecec}
+
+  /* 段階カード */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:16px 0}
+  .step{background:#fff;border:2px solid var(--ink);border-radius:14px;padding:14px 16px}
+  .step .num{display:inline-block;background:var(--accent);color:#fff;font-family:var(--display);
+             font-weight:800;padding:2px 10px;border-radius:999px;margin-bottom:8px;font-size:0.82rem}
+  .step h4{font-family:var(--display);margin:2px 0 8px;font-size:1rem}
+  .step ul{margin:6px 0 0;padding-left:1.1em}
+  .step li{font-size:0.86rem;line-height:1.55}
+
+  /* Nextcloud ユーザー前提 バナー */
+  .assumption{background:#fffaf1;border:2px dashed var(--ink);border-radius:14px;
+              padding:14px 18px;margin:16px 0}
+  .assumption b{color:var(--accent)}
+
+  /* MCP フロー */
+  .mcp-flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:12px;align-items:center;margin:14px 0}
+  .mcp-flow .box{background:#fff;border:2px solid var(--ink);border-radius:12px;padding:12px 14px;text-align:center}
+  .mcp-flow .box .t{font-family:var(--display);font-weight:700;font-size:0.9rem}
+  .mcp-flow .box .s{font-size:0.78rem;color:var(--ink-soft);margin-top:4px}
+  .mcp-flow .arr{color:var(--accent);font-family:var(--display);font-weight:800;font-size:1.2rem}
+  @media (max-width: 900px){
+    .mcp-flow{grid-template-columns:1fr;grid-template-rows:repeat(5,auto)}
+    .mcp-flow .arr{transform:rotate(90deg);text-align:center}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="system-badge">
+    <span class="dot"></span> 対象: <b>全社横断（なまけもの / WF / Nextcloud）</b>
+  </div>
+  <h1>Nextcloud Tables を全社共通 QA 管理サービスに</h1>
+  <div class="meta">2026-07-22 / owner: ishizakahiroshi / 対象読者: 経営判断側・実装者</div>
+
+  <div class="lede">
+    社内システムごとにバラバラだった問い合わせ管理を、<b>Nextcloud Tables 1 テーブルに一元化</b>する構想。既存の自社 Nextcloud（drive.mercury-group.co.jp）を使うため <b>他社クラウドに一切データを預けず</b>、実装コスト最小、AI エージェント連携も MCP 経由で即接続できる。
+  </div>
+
+  <div class="assumption">
+    <b>前提</b>: 対象ユーザー（肥尾さん / 石坂 / 上之薗 / その他社内開発者）は<b>全員 Nextcloud アカウントを保有済み</b>。認証・権限・通知は <b>Nextcloud 標準機能</b>を利用し、独自ユーザー管理は一切作らない。
+    <ul style="margin:10px 0 0;padding-left:1.2em">
+      <li>Mercury グループでは<b>約 30 名が既に日常的に Nextcloud を利用中</b>（勤怠関係者・肥尾さん含む）</li>
+      <li>Mercury 社員のユーザー ID は <code>mercury_&lt;社員番号&gt;</code> 形式で統一（例: <code>mercury_100000230</code>）。数値部は<b>なまけものの employee_id と一致</b>するため、起票者列の名前解決と kb people 台帳照合が自動でつく</li>
+      <li>石坂・上之薗は<b>外部ベンダー扱い</b>の別ドメインアカウント。Tables の権限グループは「mercury_ 社員 + 開発ベンダー」の 2 グループで組む（Nextcloud 標準 Group で表現可）</li>
+      <li>通知は Nextcloud Talk / メールで <b>対応者列の社員 ID にそのまま飛ばせる</b>ため、通知系統の独自実装は不要</li>
+    </ul>
+  </div>
+
+  <h2>全体像</h2>
+
+  <p>各業務システム（なまけもの / WF / Nextcloud 本体）に「QA 起票ボタン」を配布し、押すと Nextcloud Tables の中央 1 テーブルに行が追加される。開発者と AI エージェントは同じ 1 テーブルを見る。</p>
+
+  <div class="hero-flow">
+    <div class="col">
+      <h4>起票元システム</h4>
+      <ul>
+        <li>なまけもの</li>
+        <li>WF（経理 WF）</li>
+        <li>Nextcloud 本体</li>
+        <li>将来の他アプリ</li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col center-col">
+      <h4>Nextcloud Tables</h4>
+      <ul>
+        <li>「システム問い合わせ管理」テーブル 1 本</li>
+        <li>REST API + Webhook 標準搭載</li>
+        <li>認証 = NC 標準</li>
+      </ul>
+      <div class="sub">drive.mercury-group.co.jp</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col">
+      <h4>参照側</h4>
+      <ul>
+        <li>肥尾さん（起票・追記）</li>
+        <li>石坂 / 上之薗（対応記入）</li>
+        <li>AI エージェント（MCP 経由）</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>起票フロー（肥尾さん視点）</h2>
+
+  <p>なまけものの画面右上には環境ラベル（「開発環境」「検証環境」「本番環境」）が既にある。ここに<b>ホバー</b>すると、その環境に今デプロイされている版情報がポップオーバーで出る。ポップオーバー内の「QA に起票」ボタンを押すと、環境・版 SHA・起票者が既に埋まった状態で Nextcloud Tables の新規行画面が開き、肥尾さんは<b>本文（症状）だけ書けば OK</b>。</p>
+
+  <h3>1. 画面ヘッダ（ホバー対象）</h3>
+
+  <div class="header-mock">
+    <div class="left">
+      <span>石坂 裕志</span>
+      <span>MENU</span>
+    </div>
+    <div class="left">
+      <span class="env-label">検証環境</span>
+      <span>🦥</span>
+    </div>
+  </div>
+  <div class="meta" style="text-align:center">↑ 環境ラベルにマウスホバー</div>
+
+  <h3>2. ホバーで出る版情報ポップオーバー</h3>
+
+  <div class="popover">
+    <div class="pop-head">検証環境（namakemono）</div>
+    <div class="kv">
+      <div class="k">branch</div><div class="v">develop</div>
+      <div class="k">commit</div><div class="v">4be102e (2026-07-21 18:34 / 15 時間前)</div>
+      <div class="k">author</div><div class="v">ishizakahiroshi</div>
+      <div class="k">deployed</div><div class="v">2026-07-21 19:12 by ishizakahiroshi</div>
+    </div>
+    <div class="subj">fix: 変形労働の所定内労働時間を勤務単位集計に是正</div>
+    <div class="kv">
+      <div class="k">本番 mer</div><div class="v">2550cfc（5 コミット遅れ / 次回リリース予定 2026-08-15）</div>
+    </div>
+    <div class="btns">
+      <a class="btn" href="#">📤 QA に起票</a>
+      <a class="btn secondary" href="#">📋 まるごとコピー</a>
+    </div>
+    <div class="foot">不具合報告時はこの内容を添えてください</div>
+  </div>
+
+  <h3>3. ボタンを押すと Nextcloud Tables に prefill 済みの行が作られる</h3>
+
+  <p>「📤 QA に起票」を押すと、REST API で新規行を作り、そのまま Nextcloud Tables の該当行編集画面が新タブで開く。日付・システム・環境・版・起票者は既に埋まっているので、肥尾さんは <b>「内容」列に症状を書くだけ</b>。</p>
+
+  <h2>Nextcloud Tables の列イメージ</h2>
+
+  <div class="card" style="padding:12px 14px">
+  <table>
+    <thead>
+      <tr>
+        <th>列</th>
+        <th>説明</th>
+        <th>誰が書く</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>日付</td><td>起票日（自動）</td><td>システム自動</td></tr>
+      <tr><td>起票者</td><td>Nextcloud ログインユーザー（自動）</td><td>システム自動</td></tr>
+      <tr><td>システム</td><td>なまけもの / WF / Nextcloud 等（自動）</td><td>システム自動</td></tr>
+      <tr><td>環境</td><td>本番 / 検証 / 開発（自動）</td><td>システム自動</td></tr>
+      <tr><td>版 SHA</td><td>その時点の commit SHA + 件名（自動）</td><td>システム自動</td></tr>
+      <tr><td>内容</td><td>症状・再現手順・スクショ</td><td>起票者（肥尾さん等）</td></tr>
+      <tr><td>ステータス</td><td>未対応 / 対応中 / 完了 / 保留</td><td>対応者</td></tr>
+      <tr><td>対応者</td><td>石坂 / 上之薗 等</td><td>対応者</td></tr>
+      <tr><td>対応日</td><td>完了記入日</td><td>対応者</td></tr>
+      <tr><td>対応内容</td><td>何をしたか（対応 commit SHA も添える）</td><td>対応者</td></tr>
+      <tr><td>参照 URL</td><td>PR / 関連 issue / bugfix md 等</td><td>対応者</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="meta">起票時点で<b>自動 6 列</b>が埋まるので、肥尾さんが手入力するのは実質「内容」1 列だけ。対応者側も「ステータス / 対応内容 / 参照 URL」の 3 列を書けば完了する。</p>
+
+  <h2>AI エージェント経路（MCP）</h2>
+
+  <p>Claude Code などの AI エージェントに Nextcloud MCP を配線しておくと、開発者が問い合わせを受けた時に「これ直ってる？」の裏取りを AI に投げるだけで即答できるようになる。今回のような 7/21 肥尾さん指摘の追跡工数がゼロに近づく。</p>
+
+  <div class="mcp-flow">
+    <div class="box">
+      <div class="t">開発者</div>
+      <div class="s">「肥尾さんの 7/21 指摘、対応済み？」</div>
+    </div>
+    <div class="arr">→</div>
+    <div class="box">
+      <div class="t">AI エージェント</div>
+      <div class="s">Nextcloud MCP 経由で Tables を検索</div>
+    </div>
+    <div class="arr">→</div>
+    <div class="box">
+      <div class="t">即答</div>
+      <div class="s">「完了。対応版 4be102e、対応者 石坂、対応日 7/22」</div>
+    </div>
+  </div>
+
+  <h2>なぜ Nextcloud Tables を選ぶか</h2>
+
+  <table class="cmp">
+    <thead>
+      <tr>
+        <th>案</th>
+        <th>初期コスト</th>
+        <th>保守コスト</th>
+        <th>肥尾さん UX</th>
+        <th>AI 連携</th>
+        <th>クラウド方針</th>
+        <th>判定</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>A. なまけもの内に QA 画面 + 自作 DB</td>
+        <td class="lose">1〜2 週間</td>
+        <td class="lose">永続的に発生</td>
+        <td>要学習</td>
+        <td>要 API 自作</td>
+        <td class="win">自社内 OK</td>
+        <td><span class="tag tag-bad">重い</span></td>
+      </tr>
+      <tr>
+        <td>B. kb に CSV/xlsx 追加</td>
+        <td class="win">数時間</td>
+        <td>低</td>
+        <td class="lose">肥尾さんが触れない（致命）</td>
+        <td class="win">grep 可</td>
+        <td class="win">ローカル完結</td>
+        <td><span class="tag tag-bad">不可</span></td>
+      </tr>
+      <tr>
+        <td>C. Google Sheets（現状）</td>
+        <td class="win">ゼロ</td>
+        <td>低</td>
+        <td class="win">慣れている</td>
+        <td>gspread</td>
+        <td class="lose">他社クラウド NG</td>
+        <td><span class="tag tag-bad">経営方針で×</span></td>
+      </tr>
+      <tr>
+        <td>D. Nextcloud + OnlyOffice で xlsx</td>
+        <td class="win">1 日</td>
+        <td>低</td>
+        <td class="win">Sheets 相当</td>
+        <td>WebDAV 経由</td>
+        <td class="win">自社内 OK</td>
+        <td><span class="tag tag-warn">中間解</span></td>
+      </tr>
+      <tr>
+        <td><b>E. Nextcloud Tables + REST + MCP</b></td>
+        <td class="win">2〜3 日</td>
+        <td class="win">Nextcloud に同居</td>
+        <td class="win">Web で編集</td>
+        <td class="win">MCP 直結</td>
+        <td class="win">自社内 OK</td>
+        <td><span class="tag tag-ok">推奨</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>D 案（xlsx）でも足りるが、Tables の方が<b>列定義・API・Webhook・検索フィルタ</b>が構造化されている分、各システムからの起票ボタン配線と AI エージェント連携が素直に書ける。既存の xlsx の QA シートは Tables にそのまま列マッピングして移行可能。</p>
+
+  <h2>実装段階</h2>
+
+  <div class="steps">
+    <div class="step">
+      <span class="num">STEP 1</span>
+      <h4>Nextcloud Tables 準備</h4>
+      <ul>
+        <li>「システム問い合わせ管理」テーブル作成</li>
+        <li>列定義を確定</li>
+        <li>既存 QA シート内容を移行</li>
+        <li>関係者に共有権限付与</li>
+      </ul>
+    </div>
+    <div class="step">
+      <span class="num">STEP 2</span>
+      <h4>なまけもの版情報 + 起票ボタン</h4>
+      <ul>
+        <li>deploy スクリプトで <code>VERSION</code> 書出し</li>
+        <li><code>version.php</code> endpoint 新設</li>
+        <li>環境ラベルにホバーポップオーバー</li>
+        <li>「QA に起票」ボタン → Tables API</li>
+      </ul>
+    </div>
+    <div class="step">
+      <span class="num">STEP 3</span>
+      <h4>AI エージェント経路（MCP）</h4>
+      <ul>
+        <li>Nextcloud MCP を Claude Code に配線</li>
+        <li>Tables 読み書き権限テスト</li>
+        <li>「未対応の質問ある？」に即答できるか検証</li>
+      </ul>
+    </div>
+    <div class="step">
+      <span class="num">STEP 4</span>
+      <h4>他システム展開</h4>
+      <ul>
+        <li>WF に同型の起票ボタン配布</li>
+        <li>Nextcloud 本体にも起票入口</li>
+        <li>再利用可能な JS スニペット化</li>
+        <li>横断ダッシュボード作成</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="meta">STEP 1 + 2 で <b>2〜3 日</b>、STEP 3 で追加 <b>0.5 日</b>、STEP 4 は必要になったシステムから随時。 STEP 1・2 が終わった時点で「今回の 7/21 バグと同種の問い合わせ」は既に効率化される。</p>
+
+  <h2>期待される効果</h2>
+
+  <table>
+    <thead>
+      <tr><th>誰</th><th>今</th><th>導入後</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>肥尾さん</td>
+        <td>スプレッドシートを開いて日付・システム・症状を手入力</td>
+        <td>環境ラベルにホバー → ボタン 1 発 → 症状だけ書く</td>
+      </tr>
+      <tr>
+        <td>石坂 / 上之薗</td>
+        <td>「いつの版で見ました？」を毎回聞き返す</td>
+        <td>起票時点で版 SHA が入っているので即着手</td>
+      </tr>
+      <tr>
+        <td>AI エージェント</td>
+        <td>Chat 履歴を辿るか SSH で裏取り</td>
+        <td>MCP で Tables 直接照会 → 数秒で回答</td>
+      </tr>
+      <tr>
+        <td>経営</td>
+        <td>他社クラウド経由でのデータ流出リスク</td>
+        <td>自社 Nextcloud 内完結、方針と一致</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>リスクと対策</h2>
+
+  <div class="card">
+    <h3>1. Nextcloud Tables のバージョン依存</h3>
+    <p>Nextcloud 本体を大きくアップデートする際、Tables アプリの互換性を事前確認する必要がある。→ Nextcloud アップグレード運用に「Tables 動作確認」を組み込む。</p>
+
+    <h3>2. Tables の API レートリミット</h3>
+    <p>起票ボタン頻度は 1 日数十件想定なので実運用では問題にならない。将来的にアラート系や外部連携で大量起票が発生する場合は、キューを挟むかバッチ集約する。</p>
+
+    <h3>3. Google Sheets からの移行漏れ</h3>
+    <p>過去分の QA 履歴を Tables に持ってこないと、肥尾さん側で「以前の指摘を検索できない」問題が発生。→ STEP 1 の中で全件マイグレーションを含める（xlsx 落として Tables インポート）。</p>
+  </div>
+
+  <h2>次のアクション</h2>
+
+  <div class="card">
+    <ol>
+      <li>本構想の <b>方針 GO / NG 判断</b>（経営側）</li>
+      <li>Nextcloud Tables アプリの<b>有効化状況</b>を drive.mercury-group.co.jp で確認</li>
+      <li>GO なら <b>plan md を起こす</b>（STEP 1・2 の詳細タスク分解、担当・期日）</li>
+      <li>STEP 1・2 実装（想定 2〜3 日）</li>
+      <li>肥尾さんに実運用テストを依頼、フィードバック反映</li>
+    </ol>
+  </div>
+
+  <div class="meta" style="margin-top:32px;padding-top:16px;border-top:2px solid var(--ink)">
+    出典: 本資料は 2026-07-22 の対話（「7/21 肥尾さん指摘の裏取り」から派生）に基づく提案。<br>
+    関連: docs/local/pending_alllist-scheduled-work-time-label-mismatch.md（今回の起点となった問い合わせ）<br>
+    関連: docs/reference/reference_worktime-terminology.md（同日整備した用語定義）
+  </div>
+
+</div>
+</body>
+</html>

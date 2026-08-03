@@ -1,0 +1,107 @@
+# === OS / エディタ ===
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === ログ・一時・スクラッチ ===
+*.log
+*.jsonl
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# === AI ツールのローカル状態（トークンを含む可能性あり） ===
+.claude/
+.codex-tmp/
+
+# === ツール生成キャッシュ（アカウント ID 等の識別子を含み得る・追跡しない） ===
+.wrangler/
+.vercel/
+.netlify/
+.firebase/
+.turbo/
+.parcel-cache/
+.terraform/
+.serverless/
+**/supabase/.temp/
+.docsweep/
+
+# === ローカル/プライベート追記（fresh public clone から除外） ===
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+*.local.md
+*.local.json
+scripts/local/
+
+# === 認証情報・secrets・鍵（public へ絶対に出さない） ===
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+secrets.*
+*.secret.*
+*credential*
+.netrc
+.npmrc
+.pypirc
+
+# === Node / TypeScript ===
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+*.tsbuildinfo
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# === Go ===
+bin/
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# === Vue / Vite ===
+.vite/
+.nuxt/
+.output/
+
+# === Docker ===
+*.tar
+
+# === secrets-scan exception ===
+!scripts/secrets-scan.mjs
