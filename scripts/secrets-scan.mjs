@@ -32,7 +32,10 @@ const EXEMPT_PATHS = [
   'scripts/secrets-scan.',
   '.husky/pre-commit',
   '.github/workflows/secrets-scan',
-  'docs/local/',
+  // 'docs/local/' はここに置かない（2026-09-11 削除）。
+  // docs/local は gitignore される前提なので、ignore されていれば staged にも
+  // all-tracked にも現れず、除外を書かなくても走査対象にならない。つまりこの行が
+  // 効くのは「追跡されてしまっているとき」だけで、それは検査したい場面そのものだった。
 ];
 
 const MIN_NEEDLE_LEN = 2;

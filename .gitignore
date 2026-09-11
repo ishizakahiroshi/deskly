@@ -105,3 +105,9 @@ vendor/
 
 # === secrets-scan exception ===
 !scripts/secrets-scan.mjs
+
+# === 作業ノート（2026-09-11 追加） ===
+# 作業ノートは追跡しない。
+# scripts/secrets-scan.mjs は docs/local/ を除外パスに持っている。gitignore されている
+# 前提の除外なので、ここを追跡すると「一番あぶない場所だけ検査されない」状態になる。
+**/docs/local/
