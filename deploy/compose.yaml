@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     # 同じ機械のほかのアプリ（とくにデータベース）を押し出さないための上限
     mem_limit: 256m
+    cpus: "0.5"
     ports:
       - "127.0.0.1:8765:8765"
     volumes:
