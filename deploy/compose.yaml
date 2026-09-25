@@ -1,0 +1,29 @@
+# deskly を 1 台のサーバーに置くための compose。
+#
+# 置き場: /opt/deskly/app/compose.yaml（反映のスクリプトが毎回ここへ置き直す）
+# プロジェクト名: deskly（下の name で固定。コンテナは deskly-app-1、網は deskly_default、
+#                 ボリュームは deskly_data になる）
+#
+# 外には出さない。127.0.0.1 だけで待ち受け、手元からは SSH のポート転送で読む。
+# 同じ機械のほかのアプリの網には入れない。
+name: deskly
+
+services:
+  app:
+    build:
+      context: ../release/current
+      dockerfile: Dockerfile
+    image: deskly-app:latest
+    restart: unless-stopped
+    # 同じ機械のほかのアプリ（とくにデータベース）を押し出さないための上限
+    mem_limit: 256m
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - data:/data
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  data:
