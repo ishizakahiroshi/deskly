@@ -11,10 +11,12 @@
 
 ## Non-negotiables (full detail in CLAUDE.md)
 
-- core と adapters の依存方向は一方向（adapters → core）。core は adapter を知らない
-- 新規 adapter は ChannelAdapter interface に準拠（interface を先に定義してから実装）
-- 顧客固有名（Mercury / Meijie / Timely 等）を core / adapters に埋め込まない（tenant として汎化）
-- ビルド・コミット禁止、secrets-scan 責務、plan/bugfix/pending md の作成ルール等の AI 作業共通ルールは、各利用者のグローバル AI 設定に従う（作者環境の例: `~/.claude/CLAUDE.md` および `~/.claude/guides/`）
+- deskly が持つのは連絡の台帳だけ。ほかの道具の記録は読むだけで写さない
+- 連絡の状態は 6 つの言葉だけ（`下書き`・`送信済み`・`回答待ち`・`対応中`・`完了`・`送らない`）。新しい言葉を作らない
+- MCP の書く道具は承認付き（既定は変更の見本だけ。`apply=true` のときだけ書く）。すべての書き込みを変更の経過に残す
+- 特定の組織名・人名・実データを、コード・設定の例・テストに入れない（テストは合成データ）
+- テストは `DESKLY_HOME` を一時フォルダへ向け、実際のホームを読まない
+- ビルド・コミットの扱い、secrets-scan 責務、plan/bugfix/pending md の作成ルール等の AI 作業共通ルールは、各利用者のグローバル AI 設定に従う（作者環境の例: `~/.claude/CLAUDE.md` および `~/.claude/guides/`）
 - secrets-scan のこのリポジトリの配線（scanner パス・手動実行コマンド等）は `CLAUDE.md` の「secrets-scan（このリポジトリの配線）」節を参照
 
 ガイダンス間で矛盾が出たら `CLAUDE.md` を優先する。

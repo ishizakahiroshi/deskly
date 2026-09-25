@@ -1,57 +1,28 @@
 # deskly
 
-**Self-hosted service desk suite** for internal business systems. Ports-and-adapters architecture: a language-agnostic core with pluggable channel adapters for Nextcloud, TranChat, MCP, and future systems.
+**See whose turn it is — across every contact and every case.** deskly keeps a ledger of your outgoing and incoming contacts (state, case, due date, promises, drafts, and a full change history) and answers "whose turn is it today, and what is next?" from a CLI, an MCP server for AI assistants, and (later) a dashboard.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 ## What it does
 
-deskly connects three groups around a shared support workflow:
-
-- **業務システムのエンドユーザー** files QA / bugs / requests directly from the system they are already using (via an embeddable widget). No new login, no new URL.
-- **開発者・対応者** manages tickets in a unified dashboard, with automatic prefill of version, environment, and user context. AI agents (Claude, ChatGPT) can query and update via MCP.
-- **経営層・管理職** sees only what they are authorized for — one system if they own one, all systems if they run the company. Cross-customer aggregation is opt-in.
-
-Data stays on your infrastructure. No third-party cloud dependency.
-
-## Architecture (ports & adapters)
-
-```
-                    ┌────────────────────────────────────┐
-                    │            deskly core             │
-                    │  REST API │ PostgreSQL │ MCP tools │
-                    │  attachment storage │ auth (OIDC)  │
-                    └────────────────────────────────────┘
-                        ▲              ▲              ▲
-              ┌─────────┘              │              └─────────┐
-              │                        │                        │
-      ┌───────────────┐      ┌────────────────┐      ┌────────────────┐
-      │ nextcloud     │      │ tranchat       │      │ mcp / other    │
-      │ adapter       │      │ adapter        │      │ adapters       │
-      │ (PHP + Vue)   │      │ (Node / Py)    │      │ (Python)       │
-      └───────────────┘      └────────────────┘      └────────────────┘
-              ▲                        ▲                        ▲
-     Nextcloud users         TranChat messages          AI agents /
-     (SSO, files, notify)    (bot, DM, mention)         other systems
-
-  ┌──────────────────────────────────────────────────────────────┐
-  │ libs/embed  — dropped into each business system              │
-  │ (PHP composer / npm)                                         │
-  │ - QA button + modal                                          │
-  │ - version / env / user prefill                               │
-  │ - push to core via batch worker                              │
-  └──────────────────────────────────────────────────────────────┘
-```
-
-- **core** knows nothing about Nextcloud, TranChat, or specific channels
-- **adapters** translate between core and each channel
-- **libs/embed** is what ships inside your business systems (mer / WF / TranChat / your app)
+- **One ledger for contacts.** Each contact has a state from a fixed vocabulary (`下書き` draft / `送信済み` sent / `回答待ち` waiting for reply / `対応中` in progress / `完了` done / `送らない` not sent), a case reference, a due date, and a draft body. Every change is recorded.
+- **Whose turn, per case.** Contacts are grouped into one row per case, so you see at a glance which cases are waiting on you and which are waiting on the other side — overdue ones first.
+- **Reads, does not copy.** Work notes, case trackers, chat, mail and calendars stay in the tools that own them. deskly reads them through MCP or CLI output instead of keeping its own copy.
+- **Tool-agnostic.** Each kind of tool (chat, mail, calendar, case tracker) is reached through a small connector, so you can swap the tool without changing deskly.
+- **Local first, server when you need it.** A ledger lives in a local SQLite file, or on another machine running deskly. Several ledgers can be shown as one list.
 
 ## Status
 
-Early-stage. See [`docs/design_deskly-architecture_2026-07-22.html`](docs/design_deskly-architecture_2026-07-22.html) for the architecture proposal and [`docs/mockup_deskly-integrated-view_2026-07-22.html`](docs/mockup_deskly-integrated-view_2026-07-22.html) for the integrated dashboard UI mock.
+Early stage. Stage 1 (the contact ledger, import, CLI and MCP) is being built. Nothing is published yet.
 
-Phase 1 target: core (Go) + `adapters/nextcloud` (PHP + Vue) + `libs/embed` (PHP) — MVP for internal business system rollout.
+## Development
+
+```
+python -m venv .venv
+.venv/bin/python -m pip install -e ".[dev,mcp]"
+.venv/bin/python -m pytest -q
+```
 
 ## License
 
