@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deskly"
+version = "0.1.0"
+description = "連絡・案件・工数を 1 か所で見渡すための道具。いま誰の番かを、画面・AI（MCP）・CLI で答える。"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "ishizakahiroshi", email = "ishizakahiroshi.dev@gmail.com" }]
+keywords = ["contact-ledger", "cli", "mcp", "ai-agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Utilities",
+]
+# 本体の依存は標準ライブラリだけ。足すときは extra に入れる。
+dependencies = []
+
+[project.optional-dependencies]
+# MCP stdio サーバー
+# 下限は 1.28.1（1.28.1 未満には脆弱性がある）。上限 <2: mcp 2.0.0 で
+# `mcp.server.fastmcp` が無くなるため。2 系への対応は別途行う。
+mcp = [
+    "mcp>=1.28.1,<2",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/ishizakahiroshi/deskly"
+Repository = "https://github.com/ishizakahiroshi/deskly"
+
+[project.scripts]
+deskly = "deskly.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deskly"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E501: 日本語（全角幅）を含む行は 100 文字で数えるのが現実的でない
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
