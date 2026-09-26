@@ -14,6 +14,7 @@ from typing import Any
 
 from deskly import __version__
 from deskly.api_server import DEFAULT_HOST, DEFAULT_PORT, serve_api
+from deskly.case_service import get_case_result
 from deskly.commands import (
     DEFAULT_BACKUP_KEEP,
     add_draft,
@@ -23,6 +24,12 @@ from deskly.commands import (
     set_contact_state,
 )
 from deskly.config import ConfigError, load_config
+from deskly.dashboard_server import (
+    DEFAULT_DASHBOARD_HOST,
+    DEFAULT_DASHBOARD_PORT,
+    DashboardConfigurationError,
+    serve_dashboard,
+)
 from deskly.importer import ImportReport, run_import
 from deskly.ledgers import load_ledgers
 from deskly.model import STATES, Contact
@@ -151,6 +158,67 @@ def _waiting_command(args: argparse.Namespace) -> int:
             f"台帳: {ledger_names} / 案件: {project} / 番: {turn} / 依頼期限: {due} / "
             f"件数: {row.count} / 連絡: {contact_ids} / 待ち: {summaries}"
         )
+    return 0
+
+
+def _terminal_safe_text(value: str) -> str:
+    """Escape C0/C1 and DEL controls before terminal output."""
+    return "".join(
+        f"\\x{ord(character):02x}"
+        if ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
+        else character
+        for character in value
+    )
+
+
+def _cases_command(args: argparse.Namespace) -> int:
+    try:
+        result = get_case_result()
+    except (ConfigError, LedgerError, sqlite3.Error, OSError) as exc:
+        print(f"deskly cases: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        json.dump(result.to_dict(), sys.stdout, ensure_ascii=False, indent=2)
+        print()
+        return 1 if result.error else 0
+
+    if result.status == "not_connected":
+        print("案件一覧: 未接続")
+        return 0
+    if result.error:
+        print(result.error, file=sys.stderr)
+        return 1
+
+    assert result.view is not None
+    if not result.view.cases:
+        print("表示する案件はありません")
+    for case in result.view.cases:
+        promised_due = case.promised_due or "なし"
+        hold_until = case.hold_until or "なし"
+        linked = ", ".join(
+            f"{_terminal_safe_text(contact.ledger_name or '台帳')}/"
+            f"{_terminal_safe_text(contact.contact_id)}"
+            for contact in case.linked_contacts
+        ) or "なし"
+        print(
+            f"案件: {_terminal_safe_text(case.number)} / {_terminal_safe_text(case.title)} / "
+            f"状態: {_terminal_safe_text(case.status)} / "
+            f"承認: {_terminal_safe_text(case.approval_state)} / "
+            f"番: {_terminal_safe_text(case.turn)} / "
+            f"希望期限: {_terminal_safe_text(promised_due)} / "
+            f"保留期限: {_terminal_safe_text(hold_until)} / 連絡: {linked}"
+        )
+    if result.view.unlinked_contacts:
+        print("案件にリンクされていない連絡:")
+        for contact in result.view.unlinked_contacts:
+            ledger = _terminal_safe_text(contact.ledger_name or "台帳")
+            due = _terminal_safe_text(contact.due or "なし")
+            print(
+                f"台帳: {ledger} / ID: {_terminal_safe_text(contact.contact_id)} / "
+                f"案件: {_terminal_safe_text(contact.project or 'なし')} / "
+                f"状態: {_terminal_safe_text(contact.state)} / 依頼期限: {due}"
+            )
     return 0
 
 
@@ -354,6 +422,18 @@ def _serve_api_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dashboard_serve_command(args: argparse.Namespace) -> int:
+    try:
+        serve_dashboard(host=args.host, port=args.port)
+    except DashboardConfigurationError as exc:
+        print(f"deskly dashboard serve: {exc}", file=sys.stderr)
+        return 1
+    except OSError:
+        print("deskly dashboard serve: server could not start", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _move_ledger_command(args: argparse.Namespace) -> int:
     try:
         ledgers = load_ledgers()
@@ -422,6 +502,9 @@ def build_parser() -> argparse.ArgumentParser:
     waiting.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
     waiting.add_argument("--today", type=_parse_today, help="今日の日付（YYYY-MM-DD）")
     waiting.set_defaults(handler=_waiting_command)
+    cases = sub.add_parser("cases", help="issuepost の案件一覧と関連する連絡を読む")
+    cases.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
+    cases.set_defaults(handler=_cases_command)
 
     add = sub.add_parser("add", help="連絡の下書きを作る")
     add.add_argument("--ledger", help="作成する台帳名（既定の台帳を使う場合は省略）")
@@ -476,6 +559,17 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--ledger", required=True, help="配信する local 台帳名")
     serve.add_argument("--token-env", default="DESKLY_API_TOKEN", help="Bearer token の環境変数名")
     serve.set_defaults(handler=_serve_api_command)
+
+    dashboard = sub.add_parser("dashboard", help="localhost の read-only dashboard")
+    dashboard_sub = dashboard.add_subparsers(dest="dashboard_command", required=True)
+    dashboard_serve = dashboard_sub.add_parser("serve", help="dashboard を localhost で起動する")
+    dashboard_serve.add_argument(
+        "--host", default=DEFAULT_DASHBOARD_HOST, help="待ち受け先（127.0.0.1 のみ）"
+    )
+    dashboard_serve.add_argument(
+        "--port", type=int, default=DEFAULT_DASHBOARD_PORT, help="待ち受けポート"
+    )
+    dashboard_serve.set_defaults(handler=_dashboard_serve_command)
 
     move = sub.add_parser("move-ledger", help="空の台帳へ移行し、件数と ID を確認する")
     move.add_argument("--from", dest="source", required=True, help="移行元の台帳名")

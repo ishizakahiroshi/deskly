@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from deskly.case_service import get_case_result
 from deskly.commands import (
     add_draft as create_draft,
 )
@@ -74,6 +75,11 @@ def waiting(include_all: bool = False, today: str | None = None) -> list[dict[st
         load_ledgers().list_contacts(), today=selected_day, include_all=include_all
     )
     return [row.to_dict() for row in rows]
+
+
+def list_cases() -> dict[str, object]:
+    """Return the read-only issuepost case view and its connection status."""
+    return get_case_result().to_dict()
 
 
 def show_contact(contact_id: str) -> dict[str, Any]:
@@ -243,6 +249,7 @@ def create_server() -> Any:
     server = FastMCP("deskly")
     for name, description, function in (
         ("waiting", "案件ごとの現在の連絡待ち一覧", waiting),
+        ("list_cases", "issuepost の案件と関連する連絡を読み取り専用で一覧する", list_cases),
         ("show_contact", "連絡 1 件の全欄を読む", show_contact),
         ("search_contacts", "連絡を部分一致で検索する", search_contacts),
         ("add_draft", "下書きをプレビューまたは承認付きで作成する", add_draft),
@@ -263,6 +270,7 @@ __all__ = [
     "add_draft",
     "create_server",
     "export_text",
+    "list_cases",
     "record_reply",
     "run_stdio_server",
     "search_contacts",

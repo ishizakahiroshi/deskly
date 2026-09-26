@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'"
+    >
+    <meta name="color-scheme" content="light">
+    <title>Deskly ダッシュボード</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="site-header">
+        <div>
+          <p class="eyebrow">DESKLY</p>
+          <h1>今日の状況</h1>
+          <p class="muted">連絡、案件、工数の読み取り専用ビューです。</p>
+        </div>
+        <p id="connection-status" class="connection-status" role="status" aria-live="polite">
+          接続を確認しています
+        </p>
+      </header>
+
+      <section id="login-view" class="panel login-panel" aria-labelledby="login-heading">
+        <h2 id="login-heading">ログイン</h2>
+        <p class="muted">Deskly ダッシュボードのパスワードを入力してください。</p>
+        <form id="login-form" method="post" action="/login">
+          <label for="password-input">パスワード</label>
+          <input
+            id="password-input"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          >
+          <button type="submit">ログイン</button>
+        </form>
+        <p id="login-message" class="message" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="dashboard-view" hidden aria-labelledby="dashboard-heading">
+        <div class="dashboard-heading">
+          <div>
+            <h2 id="dashboard-heading">ダッシュボード</h2>
+            <p id="generated-at" class="muted">更新日時: —</p>
+          </div>
+          <div class="toolbar">
+            <button id="refresh-button" class="secondary-button" type="button">更新</button>
+            <button id="logout-button" class="secondary-button" type="button">ログアウト</button>
+          </div>
+        </div>
+        <p id="dashboard-message" class="message" role="status" aria-live="polite"></p>
+
+        <div class="dashboard-grid">
+          <section class="panel" aria-labelledby="waiting-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">CONTACTS</p>
+                <h2 id="waiting-heading">連絡待ち</h2>
+              </div>
+              <span id="waiting-count" class="count-badge">—</span>
+            </div>
+            <p id="waiting-summary" class="section-state" role="status" aria-live="polite">読み込み待ち</p>
+            <p id="waiting-overdue" class="muted"></p>
+            <p id="waiting-next-due" class="muted"></p>
+            <ul id="waiting-rows" class="card-list" aria-label="連絡待ちの一覧"></ul>
+          </section>
+
+          <section class="panel" aria-labelledby="cases-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">ISSUEPOST</p>
+                <h2 id="cases-heading">案件</h2>
+              </div>
+              <span id="cases-count" class="count-badge">—</span>
+            </div>
+            <p id="cases-summary" class="section-state" role="status" aria-live="polite">読み込み待ち</p>
+            <p id="cases-unlinked" class="muted"></p>
+            <ul id="case-rows" class="card-list" aria-label="案件の一覧"></ul>
+          </section>
+
+          <section class="panel worklog-panel" aria-labelledby="worklog-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">WORKLOG · UTC</p>
+                <h2 id="worklog-heading">直近30日の工数</h2>
+              </div>
+              <span id="worklog-total" class="count-badge">—</span>
+            </div>
+            <p id="worklog-range" class="muted"></p>
+            <p id="worklog-summary" class="section-state" role="status" aria-live="polite">読み込み待ち</p>
+            <ul id="worklog-rows" class="card-list" aria-label="プロジェクト別工数"></ul>
+          </section>
+
+          <section class="panel notification-panel" aria-labelledby="notification-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">PREVIEW ONLY</p>
+                <h2 id="notification-heading">通知プレビュー</h2>
+              </div>
+              <button id="notification-refresh-button" class="secondary-button" type="button">
+                件数を更新
+              </button>
+            </div>
+            <p class="muted">確認時点の件数だけを表示します。通知の送信はしません。</p>
+            <p id="notification-summary" class="section-state" role="status" aria-live="polite">
+              読み込み待ち
+            </p>
+            <dl class="notification-counts">
+              <div>
+                <dt>連絡待ち</dt>
+                <dd id="notification-waiting-count">—</dd>
+              </div>
+              <div>
+                <dt>期限超過</dt>
+                <dd id="notification-overdue-count">—</dd>
+              </div>
+            </dl>
+            <p id="notification-as-of" class="muted"></p>
+          </section>
+        </div>
+      </section>
+      <footer class="site-footer">Deskly · ローカル読み取り専用</footer>
+    </main>
+  </body>
+</html>

@@ -46,6 +46,11 @@ deskly = "deskly.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["deskly"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"deskly/static/index.html" = "deskly/static/index.html"
+"deskly/static/app.css" = "deskly/static/app.css"
+"deskly/static/app.js" = "deskly/static/app.js"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

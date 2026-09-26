@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import PurePosixPath
 
+from deskly.config import IssuepostSettings
+from deskly.issuepost import IssuepostCase
 from deskly.ledgers import LedgerContact
 from deskly.model import (
     STATE_DONE,
@@ -44,6 +46,42 @@ class WaitingRow:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class CaseContactRef:
+    """案件ビューに出す連絡参照。本文など連絡内容は含めない。"""
+
+    contact_id: str
+    project: str
+    state: str
+    due: str
+    ledger_name: str | None = None
+
+
+@dataclass(frozen=True)
+class CaseRow:
+    """issuepost の案件項目と、完全一致で結び付いた連絡参照。"""
+
+    number: str
+    title: str
+    status: str
+    approval_state: str
+    promised_due: str | None
+    hold_until: str | None
+    turn: str
+    linked_contacts: tuple[CaseContactRef, ...] = ()
+
+
+@dataclass(frozen=True)
+class CaseView:
+    """案件一覧と、どの案件にも結び付かなかった連絡。"""
+
+    cases: tuple[CaseRow, ...]
+    unlinked_contacts: tuple[CaseContactRef, ...]
+
+
+UNKNOWN_CASE_TURN = "unknown"
+
+
 def _due_date(value: str) -> date | None:
     candidate = value.strip()
     try:
@@ -69,7 +107,11 @@ def _summary(contact: Contact) -> str:
 
 
 def build_waiting_rows(
-    contacts: Iterable[Contact | LedgerContact], *, today: date, include_all: bool = False
+    contacts: Iterable[Contact | LedgerContact],
+    *,
+    today: date,
+    include_all: bool = False,
+    include_summaries: bool = True,
 ) -> list[WaitingRow]:
     """連絡を案件ごとにまとめて、番・最短期限・要約で並べる。
 
@@ -126,10 +168,15 @@ def build_waiting_rows(
         else:
             overdue = False
 
-        summary_contacts = active or ordered_contacts
-        summaries = tuple(
-            dict.fromkeys(summary for contact in summary_contacts if (summary := _summary(contact)))
-        )
+        if include_summaries:
+            summary_contacts = active or ordered_contacts
+            summaries = tuple(
+                dict.fromkeys(
+                    summary for contact in summary_contacts if (summary := _summary(contact))
+                )
+            )
+        else:
+            summaries = ()
         rows.append(
             WaitingRow(
                 project=group_project,
@@ -161,3 +208,62 @@ def build_waiting_rows(
             row.contact_refs[0] if row.contact_refs else row.contact_ids[0],
         ),
     )
+
+
+def _case_turn(case: IssuepostCase, settings: IssuepostSettings) -> str:
+    # 承認の明示的な対応を優先し、未設定なら状態の対応だけを見る。
+    approval_turn = settings.approval_turn_mapping.get(case.approval_state)
+    if approval_turn is not None:
+        return approval_turn
+    return settings.status_turn_mapping.get(case.status, UNKNOWN_CASE_TURN)
+
+
+def _case_contact_ref(item: Contact | LedgerContact) -> CaseContactRef:
+    if isinstance(item, LedgerContact):
+        contact = item.contact
+        ledger_name: str | None = item.ledger.name
+    else:
+        contact = item
+        ledger_name = None
+    return CaseContactRef(
+        contact_id=contact.id,
+        project=contact.project,
+        state=contact.state,
+        due=contact.due,
+        ledger_name=ledger_name,
+    )
+
+
+def build_case_view(
+    cases: Iterable[IssuepostCase],
+    contacts: Iterable[Contact | LedgerContact],
+    settings: IssuepostSettings,
+) -> CaseView:
+    """案件と連絡を `Contact.project == case.number` の完全一致で結ぶ。"""
+    case_items = tuple(cases)
+    contact_refs = tuple(_case_contact_ref(item) for item in contacts)
+    known_numbers = {case.number for case in case_items}
+    linked_by_number: dict[str, list[CaseContactRef]] = {
+        number: [] for number in known_numbers
+    }
+    unlinked: list[CaseContactRef] = []
+    for contact in contact_refs:
+        if contact.project in known_numbers:
+            linked_by_number[contact.project].append(contact)
+        else:
+            unlinked.append(contact)
+
+    rows = tuple(
+        CaseRow(
+            number=case.number,
+            title=case.title,
+            status=case.status,
+            approval_state=case.approval_state,
+            promised_due=case.promised_due,
+            hold_until=case.hold_until,
+            turn=_case_turn(case, settings),
+            linked_contacts=tuple(linked_by_number[case.number]),
+        )
+        for case in case_items
+    )
+    return CaseView(cases=rows, unlinked_contacts=tuple(unlinked))

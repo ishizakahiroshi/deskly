@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from deskly.cli import main
-from deskly.config import LEDGER_COMPANY, ledger_path
+from deskly.config import LEDGER_COMPANY, IssuepostSettings, ledger_path
+from deskly.issuepost import IssuepostCase
 from deskly.model import (
     STATE_DONE,
     STATE_DRAFT,
@@ -18,7 +19,7 @@ from deskly.model import (
     Contact,
 )
 from deskly.store import SqliteStore
-from deskly.views import build_waiting_rows
+from deskly.views import UNKNOWN_CASE_TURN, build_case_view, build_waiting_rows
 
 
 def _contact(
@@ -40,6 +41,105 @@ def _contact(
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",
     )
+
+
+def _case(
+    number: str,
+    *,
+    title: str = "Synthetic case title",
+    status: str = "synthetic-unmapped-status",
+    approval_state: str = "synthetic-unmapped-approval",
+    promised_due: str | None = "2026-03-04",
+    hold_until: str | None = "2026-03-09",
+) -> IssuepostCase:
+    return IssuepostCase(
+        number=number,
+        title=title,
+        status=status,
+        approval_state=approval_state,
+        promised_due=promised_due,
+        hold_until=hold_until,
+    )
+
+
+def test_case_view_links_only_exact_project_and_retains_unmatched_items() -> None:
+    cases = (
+        _case(
+            "synthetic-case-1",
+            title="Synthetic report title",
+            status="synthetic-case-status",
+            approval_state="synthetic-case-approval",
+        ),
+        _case("synthetic-case-2", title="Unlinked synthetic case"),
+    )
+    contacts = (
+        _contact(
+            "c-20260101-00000001",
+            project="synthetic-case-1",
+            body="Private synthetic contact body",
+        ),
+        _contact(
+            "c-20260101-00000002",
+            project="synthetic-case-1 ",
+            body="Private synthetic unlinked body",
+        ),
+        _contact("c-20260101-00000003", project="Synthetic report title"),
+        _contact("c-20260101-00000004", project="no matching case"),
+    )
+    settings = IssuepostSettings(url="https://example.test", token_env="TOKEN")
+
+    view = build_case_view(cases, contacts, settings)
+
+    assert len(view.cases) == 2
+    assert [case.number for case in view.cases] == [
+        "synthetic-case-1",
+        "synthetic-case-2",
+    ]
+    assert [item.contact_id for item in view.cases[0].linked_contacts] == [
+        "c-20260101-00000001"
+    ]
+    assert view.cases[1].linked_contacts == ()
+    assert [item.contact_id for item in view.unlinked_contacts] == [
+        "c-20260101-00000002",
+        "c-20260101-00000003",
+        "c-20260101-00000004",
+    ]
+    assert view.cases[0].promised_due == "2026-03-04"
+    assert view.cases[0].hold_until == "2026-03-09"
+    assert view.cases[0].promised_due != view.cases[0].hold_until
+    assert view.cases[0].title == "Synthetic report title"
+    assert view.cases[0].status == "synthetic-case-status"
+    assert view.cases[0].approval_state == "synthetic-case-approval"
+    assert view.cases[0].turn == UNKNOWN_CASE_TURN
+    assert not hasattr(view.cases[0], "body")
+    assert "Private synthetic contact body" not in repr(view)
+    assert "Private synthetic unlinked body" not in repr(view)
+
+
+def test_case_view_turn_uses_only_configured_mappings() -> None:
+    cases = (
+        _case(
+            "synthetic-status-mapped",
+            status="synthetic-status-id",
+            approval_state="synthetic-approval-unmapped",
+        ),
+        _case(
+            "synthetic-approval-mapped",
+            status="synthetic-status-id",
+            approval_state="synthetic-approval-id",
+        ),
+        _case("synthetic-unknown"),
+    )
+    settings = IssuepostSettings(
+        url="https://example.test",
+        token_env="TOKEN",
+        status_turn_mapping={"synthetic-status-id": "こちら"},
+        approval_turn_mapping={"synthetic-approval-id": "相手"},
+    )
+
+    view = build_case_view(cases, (), settings)
+
+    assert [case.turn for case in view.cases] == ["こちら", "相手", UNKNOWN_CASE_TURN]
 
 
 def test_waiting_groups_projects_and_keeps_unassigned_contacts_separate() -> None:
@@ -124,6 +224,22 @@ def test_waiting_ignores_invalid_due_and_uses_filename_topic_fallback() -> None:
     assert rows[0].due is None
     assert rows[0].overdue is False
     assert rows[0].summaries == ("sample-reply",)
+
+
+def test_waiting_can_skip_body_summary_computation(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_summary(_contact: Contact) -> str:
+        raise AssertionError("summary computation must be skipped")
+
+    monkeypatch.setattr("deskly.views._summary", fail_summary)
+
+    rows = build_waiting_rows(
+        [_contact("c-20260101-00000001", body="synthetic private line")],
+        today=date(2026, 1, 6),
+        include_summaries=False,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].summaries == ()
 
 
 def test_waiting_json_schema_and_cli_date_are_stable(

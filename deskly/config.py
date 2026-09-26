@@ -40,14 +40,15 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 LEDGER_COMPANY = "company"
 LEDGER_PERSONAL = "personal"
@@ -87,11 +88,31 @@ class LedgerDefinition:
 
 
 @dataclass(frozen=True)
+class IssuepostSettings:
+    """Optional read-only issuepost endpoint and unmodified turn mappings."""
+
+    url: str
+    token_env: str
+    status_turn_mapping: Mapping[str, str] = field(default_factory=dict)
+    approval_turn_mapping: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WorklogSettings:
+    """Explicit many-ai-time scan roots. Missing roots never imply home defaults."""
+
+    claude_dir: Path | None = None
+    codex_dir: Path | None = None
+
+
+@dataclass(frozen=True)
 class Config:
     sources: tuple[ImportSource, ...] = ()
     excluded_recipients: ExcludedRecipients | None = None
     ledgers: tuple[LedgerDefinition, ...] = ()
     default_ledger: str | None = None
+    issuepost: IssuepostSettings | None = None
+    worklog: WorklogSettings | None = None
 
     def ledger(self, name: str) -> LedgerDefinition:
         """設定済みの台帳を返す。"""
@@ -141,6 +162,116 @@ def _ledger_name(value: object, where: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", value):
         raise ConfigError(f"{where} は小文字英数字・ハイフン・下線の名前にしてください")
     return value
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.casefold() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_issuepost_url(value: object) -> str:
+    """Validate and normalize an issuepost origin at every configuration boundary."""
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("issuepost.url は API の URL が必要です")
+    raw = value.strip()
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in raw) or "?" in raw or "#" in raw:
+        raise ConfigError("issuepost.url は query / fragment を含まない URL にしてください")
+    try:
+        parsed_url = urlsplit(raw)
+        port = parsed_url.port
+        if port is not None and not 1 <= port <= 65535:
+            raise ValueError("port out of range")
+    except ValueError:
+        raise ConfigError("issuepost.url は正しい https URL にしてください") from None
+
+    scheme = parsed_url.scheme.casefold()
+    if (
+        scheme not in {"http", "https"}
+        or not parsed_url.hostname
+        or parsed_url.path not in {"", "/"}
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+        or parsed_url.query
+        or parsed_url.fragment
+    ):
+        raise ConfigError("issuepost.url は認証情報や path を含まない https URL にしてください")
+    if scheme == "http" and not _is_loopback_host(parsed_url.hostname):
+        raise ConfigError("issuepost.url の http は loopback だけにできます")
+    return urlunsplit((scheme, parsed_url.netloc, "", "", ""))
+
+
+def _turn_mapping(value: object, where: str) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ConfigError(f"{where} は識別子と表示値の表にしてください")
+    result: dict[str, str] = {}
+    for key, turn in value.items():
+        if (
+            not isinstance(key, str)
+            or not key
+            or not isinstance(turn, str)
+            or not turn.strip()
+        ):
+            raise ConfigError(f"{where} は空でない文字の対応表にしてください")
+        result[key] = turn.strip()
+    return result
+
+
+def _issuepost_settings(value: object) -> IssuepostSettings | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ConfigError("issuepost は url と token_env を持つ表にしてください")
+
+    url_value = value.get("url")
+    token_env = value.get("token_env")
+    issuepost_url = validate_issuepost_url(url_value)
+    if not isinstance(token_env, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", token_env):
+        raise ConfigError("issuepost.token_env は環境変数名にしてください")
+
+    raw_turns = value.get("turn_mapping", {})
+    if not isinstance(raw_turns, Mapping):
+        raise ConfigError("issuepost.turn_mapping は表にしてください")
+    unknown_turn_keys = set(raw_turns) - {"status", "approval_state"}
+    if unknown_turn_keys:
+        raise ConfigError("issuepost.turn_mapping は status と approval_state の表にしてください")
+
+    return IssuepostSettings(
+        url=issuepost_url,
+        token_env=token_env,
+        status_turn_mapping=_turn_mapping(
+            raw_turns.get("status"), "issuepost.turn_mapping.status"
+        ),
+        approval_turn_mapping=_turn_mapping(
+            raw_turns.get("approval_state"), "issuepost.turn_mapping.approval_state"
+        ),
+    )
+
+
+def _worklog_settings(value: object) -> WorklogSettings | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ConfigError("worklog は claude_dir / codex_dir を持つ表にしてください")
+    unknown = set(value) - {"claude_dir", "codex_dir"}
+    if unknown:
+        raise ConfigError("worklog は claude_dir / codex_dir だけを指定できます")
+    claude_dir = (
+        _path_value(value["claude_dir"], "worklog.claude_dir")
+        if "claude_dir" in value
+        else None
+    )
+    codex_dir = (
+        _path_value(value["codex_dir"], "worklog.codex_dir")
+        if "codex_dir" in value
+        else None
+    )
+    return WorklogSettings(claude_dir=claude_dir, codex_dir=codex_dir)
 
 
 def parse_config(data: Mapping[str, Any], *, require_exclusions: bool = True) -> Config:
@@ -287,6 +418,8 @@ def parse_config(data: Mapping[str, Any], *, require_exclusions: bool = True) ->
         excluded_recipients=excluded,
         ledgers=tuple(definitions),
         default_ledger=default_ledger,
+        issuepost=_issuepost_settings(data.get("issuepost")),
+        worklog=_worklog_settings(data.get("worklog")),
     )
 
 
@@ -330,11 +463,14 @@ __all__ = [
     "ConfigError",
     "ExcludedRecipients",
     "ImportSource",
+    "IssuepostSettings",
     "LedgerDefinition",
+    "WorklogSettings",
     "config_path",
     "deskly_home",
     "ledger_path",
     "load_config",
     "load_ledger_config",
     "parse_config",
+    "validate_issuepost_url",
 ]
