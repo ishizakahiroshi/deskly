@@ -115,6 +115,10 @@ class LedgerStore(Protocol):
 
     def close(self) -> None: ...
 
+    def __enter__(self) -> Self: ...
+
+    def __exit__(self, *_exc_info: object) -> None: ...
+
 
 _CONTACT_COLUMNS: tuple[str, ...] = ("id", *MUTABLE_FIELDS, "created_at", "updated_at")
 _CONTACT_FIELD_NAMES = frozenset(_CONTACT_COLUMNS)
@@ -195,6 +199,65 @@ def _row_to_contact(row: sqlite3.Row) -> Contact:
     data["state_inferred"] = bool(data["state_inferred"])
     data["extra"] = json.loads(data["extra"])
     return Contact(**data)
+
+
+def _open_readonly(path: str | Path) -> sqlite3.Connection:
+    target = Path(path)
+    if not target.is_file():
+        raise FileNotFoundError("台帳がありません")
+    connection = sqlite3.connect(target.resolve().as_uri() + "?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def _export_rows_from_connection(connection: sqlite3.Connection) -> list[dict[str, Any]]:
+    contacts = [
+        _row_to_contact(row)
+        for row in connection.execute("SELECT * FROM contacts ORDER BY created_at, id").fetchall()
+    ]
+    changes = connection.execute(
+        "SELECT contact_id, changed_at, field, old_value, new_value, actor "
+        "FROM changes ORDER BY seq"
+    ).fetchall()
+    rows: list[dict[str, Any]] = [{"type": "schema", "version": SCHEMA_VERSION}]
+    rows += [{"type": "contact", **contact.to_dict()} for contact in contacts]
+    rows += [{"type": "change", **_change_from_row(dict(row)).to_dict()} for row in changes]
+    return rows
+
+
+def list_contacts_readonly(path: str | Path) -> list[Contact]:
+    """既存台帳をスキーマ初期化せず読み、無ければ空の一覧を返す。"""
+    if not Path(path).is_file():
+        return []
+    connection = _open_readonly(path)
+    try:
+        rows = connection.execute("SELECT * FROM contacts ORDER BY created_at, id").fetchall()
+        return [_row_to_contact(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def get_contact_readonly(path: str | Path, contact_id: str) -> Contact:
+    """既存台帳の 1 件をスキーマ初期化なしで読む。"""
+    valid_id = validate_contact_id(contact_id)
+    connection = _open_readonly(path)
+    try:
+        row = connection.execute("SELECT * FROM contacts WHERE id = ?", (valid_id,)).fetchone()
+        if row is None:
+            raise NotFoundError(f"連絡が見つかりません: {valid_id}")
+        return _row_to_contact(row)
+    finally:
+        connection.close()
+
+
+def export_rows_readonly(path: str | Path) -> list[dict[str, Any]]:
+    """既存台帳と変更履歴を、スキーマ初期化せず同じ時点で JSON 行へ書き出す。"""
+    connection = _open_readonly(path)
+    connection.execute("BEGIN")
+    try:
+        return _export_rows_from_connection(connection)
+    finally:
+        connection.execute("ROLLBACK")
 
 
 def _contact_from_row(row: Mapping[str, Any]) -> Contact:
@@ -464,15 +527,7 @@ class SqliteStore:
     def export_rows(self) -> list[dict[str, Any]]:
         """全件を JSON にできる行の並びで返す（先頭が ``schema``、次に全連絡、次に全経過）。"""
         with self._read_tx():
-            contacts = self.list_contacts()
-            changes = self._conn.execute(
-                "SELECT contact_id, changed_at, field, old_value, new_value, actor "
-                "FROM changes ORDER BY seq"
-            ).fetchall()
-        rows: list[dict[str, Any]] = [{"type": "schema", "version": SCHEMA_VERSION}]
-        rows += [{"type": "contact", **c.to_dict()} for c in contacts]
-        rows += [{"type": "change", **_change_from_row(dict(r)).to_dict()} for r in changes]
-        return rows
+            return _export_rows_from_connection(self._conn)
 
     def import_rows(self, rows: Iterable[Mapping[str, Any]]) -> ImportCounts:
         """``export_rows`` の行を取り込む。ID・欄・作成日時・更新日時・経過をそのまま写す。
@@ -521,4 +576,7 @@ __all__ = [
     "LedgerStore",
     "NotFoundError",
     "SqliteStore",
+    "export_rows_readonly",
+    "get_contact_readonly",
+    "list_contacts_readonly",
 ]

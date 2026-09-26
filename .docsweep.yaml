@@ -1,0 +1,5 @@
+# Obsidian notes are user-maintained knowledge, not docsweep work items.
+ignore:
+  - "docs/obsidian"
+  - "**/docs/obsidian"
+  - "**/docs/obsidian/**"

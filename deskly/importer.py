@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import os
 import re
 import sqlite3
 import unicodedata
@@ -25,8 +26,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from deskly.config import Config, ConfigError, ExcludedRecipients, ImportSource, ledger_path
+from deskly.config import Config, ConfigError, ExcludedRecipients, ImportSource
 from deskly.model import STATE_DRAFT, STATE_SENT, STATES
+from deskly.remote_store import RemoteStore
 from deskly.store import ConflictError, LedgerStore, SqliteStore
 
 IMPORT_ACTOR = "import"
@@ -418,12 +420,22 @@ def run_import(config: Config, *, dry_run: bool = False) -> ImportReport:
 
     def open_store(name: str) -> LedgerStore | ReadOnlyLedgerIndex | None:
         if name not in opened:
-            path = ledger_path(name)
-            if dry_run:
-                # 読み取り接続だけを使い、既存台帳も初期化しない。無ければ作らない。
-                opened[name] = ReadOnlyLedgerIndex(path) if path.exists() else None
+            definition = config.ledger(name)
+            if definition.storage == "server":
+                if not definition.url or not definition.token_env:
+                    raise ConfigError("server 台帳の設定が正しくありません")
+                token = os.environ.get(definition.token_env, "")
+                if not token:
+                    raise ConfigError("server 台帳の認証トークンが未設定です")
+                # dry-run でも remote の既存データを読む必要があるが、_import_file は書かない。
+                opened[name] = RemoteStore(definition.url, token)
             else:
-                opened[name] = SqliteStore(path)
+                path = config.local_ledger_path(name)
+                if dry_run:
+                    # 読み取り接続だけを使い、既存台帳も初期化しない。無ければ作らない。
+                    opened[name] = ReadOnlyLedgerIndex(path) if path.exists() else None
+                else:
+                    opened[name] = SqliteStore(path)
         return opened[name]
 
     report = ImportReport(dry_run=dry_run, exclusion_entries=len(exclusions))

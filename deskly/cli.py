@@ -4,13 +4,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
+from collections.abc import Callable
+from datetime import date
+from pathlib import Path
+from typing import Any
 
 from deskly import __version__
+from deskly.api_server import DEFAULT_HOST, DEFAULT_PORT, serve_api
+from deskly.commands import (
+    DEFAULT_BACKUP_KEEP,
+    add_draft,
+    backup_rows,
+    export_text,
+    record_reply,
+    set_contact_state,
+)
 from deskly.config import ConfigError, load_config
 from deskly.importer import ImportReport, run_import
-from deskly.store import LedgerError
+from deskly.ledgers import load_ledgers
+from deskly.model import STATES, Contact
+from deskly.store import (
+    LedgerError,
+    LedgerStore,
+    export_rows_readonly,
+)
+from deskly.views import build_waiting_rows
 
 
 def format_import_report(report: ImportReport) -> str:
@@ -86,6 +107,305 @@ def _import_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_today(value: str) -> date:
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--today は YYYY-MM-DD で指定してください") from exc
+    if parsed.isoformat() != value:
+        raise argparse.ArgumentTypeError("--today は YYYY-MM-DD で指定してください")
+    return parsed
+
+
+def _waiting_command(args: argparse.Namespace) -> int:
+    try:
+        ledgers = load_ledgers()
+        contacts = ledgers.list_contacts()
+        rows = build_waiting_rows(
+            contacts,
+            today=args.today or date.today(),
+            include_all=bool(args.all),
+        )
+    except (ConfigError, LedgerError, sqlite3.Error, OSError) as exc:
+        print(f"deskly waiting: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        json.dump([row.to_dict() for row in rows], sys.stdout, ensure_ascii=False, indent=2)
+        print()
+        return 0
+
+    if not rows:
+        print("表示する連絡はありません")
+        return 0
+    for row in rows:
+        project = row.project or "案件なし"
+        turn = row.turn or "—"
+        due = row.due or "なし"
+        if row.overdue:
+            due += "（期限切れ）"
+        summaries = " / ".join(row.summaries) or "要約なし"
+        contact_ids = ", ".join(row.contact_refs or row.contact_ids)
+        ledger_names = " / ".join(row.ledger_names) or "—"
+        print(
+            f"台帳: {ledger_names} / 案件: {project} / 番: {turn} / 依頼期限: {due} / "
+            f"件数: {row.count} / 連絡: {contact_ids} / 待ち: {summaries}"
+        )
+    return 0
+
+
+def _write_command(
+    name: str,
+    operation: Callable[[LedgerStore], Contact],
+    *,
+    require_existing: bool = False,
+    ledger_name: str | None = None,
+    contact_id: str | None = None,
+) -> int:
+    try:
+        ledgers = load_ledgers()
+        if contact_id is not None:
+            definition = ledgers.find_contact(contact_id).ledger
+        elif ledger_name is not None:
+            definition = ledgers.definition(ledger_name)
+        else:
+            definition = ledgers.default
+        if require_existing and contact_id is None:
+            raise AssertionError("既存連絡の更新には contact_id が必要です")
+        with ledgers.open_store(definition.name) as store:
+            contact = operation(store)
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly {name}: {exc}", file=sys.stderr)
+        return 1
+    prefix = f"{definition.name}/" if len(ledgers.definitions) > 1 else ""
+    print(f"{prefix}{contact.id} {contact.state}")
+    return 0
+
+
+def _add_command(args: argparse.Namespace) -> int:
+    fields = {
+        name: value
+        for name, value in (
+            ("project", args.project),
+            ("recipient", args.recipient),
+            ("channel", args.channel),
+            ("sent_at", args.sent_at),
+            ("due", args.due),
+            ("promise", args.promise),
+            ("agreement", args.agreement),
+            ("sensitive", args.sensitive),
+            ("basis", args.basis),
+            ("note", args.note),
+            ("references", args.references),
+            ("shared_url", args.shared_url),
+            ("body", args.body),
+        )
+        if value is not None
+    }
+    return _write_command(
+        "add",
+        lambda store: add_draft(store, fields),
+        ledger_name=args.ledger,
+    )
+
+
+def _set_state_command(args: argparse.Namespace) -> int:
+    return _write_command(
+        "set-state",
+        lambda store: set_contact_state(
+            store,
+            args.contact_id,
+            args.state,
+            expected_updated_at=args.expected_updated_at,
+        ),
+        require_existing=True,
+        contact_id=args.contact_id,
+    )
+
+
+def _record_reply_command(args: argparse.Namespace) -> int:
+    return _write_command(
+        "record-reply",
+        lambda store: record_reply(
+            store,
+            args.contact_id,
+            args.summary,
+            expected_updated_at=args.expected_updated_at,
+        ),
+        require_existing=True,
+        contact_id=args.contact_id,
+    )
+
+
+def _show_command(args: argparse.Namespace) -> int:
+    try:
+        entry = load_ledgers().find_contact(args.contact_id)
+        contact = entry.contact
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly show: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        json.dump(entry.to_dict(), sys.stdout, ensure_ascii=False, indent=2)
+        print()
+        return 0
+    labels = (
+        ("id", "ID"),
+        ("state", "状態"),
+        ("state_inferred", "状態の推定"),
+        ("project", "案件"),
+        ("recipient", "宛先"),
+        ("channel", "経路"),
+        ("sent_at", "送信日時"),
+        ("due", "依頼期限"),
+        ("promise", "約束"),
+        ("agreement", "合意"),
+        ("sensitive", "機微"),
+        ("basis", "根拠"),
+        ("note", "補足"),
+        ("references", "参照"),
+        ("shared_url", "共有 URL"),
+        ("body", "本文"),
+        ("source_path", "取り込み元"),
+        ("source_hash", "取り込み元のハッシュ"),
+        ("extra", "知らない欄"),
+        ("created_at", "作成日時"),
+        ("updated_at", "更新日時"),
+    )
+    print(f"台帳: {entry.ledger.label}")
+    for name, label in labels:
+        value = getattr(contact, name)
+        if name == "extra":
+            value = json.dumps(dict(value), ensure_ascii=False, sort_keys=True)
+        print(f"{label}: {value}")
+    return 0
+
+
+def _export_command(args: argparse.Namespace) -> int:
+    try:
+        contact = load_ledgers().find_contact(args.contact_id).contact
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly export: {exc}", file=sys.stderr)
+        return 1
+    sys.stdout.write(export_text(contact))
+    return 0
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("1 以上の整数を指定してください") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("1 以上の整数を指定してください")
+    return parsed
+
+
+def _backup_command(args: argparse.Namespace) -> int:
+    try:
+        ledgers = load_ledgers()
+        exports: list[tuple[Any, list[dict[str, Any]]]] = []
+        missing = []
+        for definition in ledgers.definitions:
+            if definition.storage == "local":
+                path = ledgers.config.local_ledger_path(definition.name)
+                if not path.is_file():
+                    missing.append(definition.name)
+                    continue
+                rows = export_rows_readonly(path)
+            else:
+                with ledgers.open_store(definition.name) as store:
+                    rows = store.export_rows()
+            exports.append((definition, rows))
+        if not exports:
+            raise FileNotFoundError("控え対象の台帳がありません")
+        backups = []
+        for definition, rows in exports:
+            backups.append(
+                backup_rows(
+                    rows,
+                    ledger_name=definition.name,
+                    destination=args.dest,
+                    keep=args.keep,
+                )
+            )
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly backup: {exc}", file=sys.stderr)
+        return 1
+    for name in missing:
+        print(f"控えをスキップしました（台帳が未作成）: {name}")
+    for backup in backups:
+        print(f"控えを書き出しました: {backup}")
+    return 0
+
+
+def _serve_api_command(args: argparse.Namespace) -> int:
+    token = os.environ.get(args.token_env, "")
+    if not token:
+        print("deskly serve-api: API token が未設定のため起動できません", file=sys.stderr)
+        return 1
+    try:
+        ledgers = load_ledgers()
+        definition = ledgers.definition(args.ledger)
+        ledger_path = ledgers.config.local_ledger_path(definition.name)
+        serve_api(ledger_path, token, host=args.host, port=args.port)
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly serve-api: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _move_ledger_command(args: argparse.Namespace) -> int:
+    try:
+        ledgers = load_ledgers()
+        source_definition = ledgers.definition(args.source)
+        target_definition = ledgers.definition(args.target)
+        if source_definition.name == target_definition.name:
+            raise ValueError("移行元と移行先は別の台帳にしてください")
+
+        with ledgers.open_store(source_definition.name) as source:
+            source_rows = source.export_rows()
+            source_contacts = source.list_contacts()
+        with ledgers.open_store(target_definition.name) as target:
+            if target.list_contacts():
+                raise ValueError("移行先の台帳が空ではありません")
+            target.import_rows(source_rows)
+            target_rows = target.export_rows()
+            target_contacts = target.list_contacts()
+
+        source_ids = sorted(contact.id for contact in source_contacts)
+        target_ids = sorted(contact.id for contact in target_contacts)
+        if source_ids != target_ids or len(source_contacts) != len(target_contacts):
+            raise LedgerError("移行先の連絡件数または ID が移行元と一致しません")
+        if source_rows != target_rows:
+            raise LedgerError("移行先の連絡または変更の経過が移行元と一致しません")
+        with ledgers.open_store(source_definition.name) as source:
+            if source.export_rows() != source_rows:
+                raise LedgerError("移行中に移行元の台帳が変わりました。元の台帳は保持しています")
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly move-ledger: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"移行先を確認しました（元の台帳は保持）: "
+        f"{source_definition.name} → {target_definition.name} / {len(source_ids)} 件"
+    )
+    return 0
+
+
+def _mcp_command(_args: argparse.Namespace) -> int:
+    try:
+        from deskly.mcp_server import run_stdio_server
+
+        run_stdio_server()
+    except ModuleNotFoundError:
+        print(
+            "deskly mcp: MCP の追加依存がありません。"
+            "`pip install 'deskly[mcp]'` でインストールしてください。",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="deskly",
@@ -97,6 +417,73 @@ def build_parser() -> argparse.ArgumentParser:
     importer.add_argument("--dry-run", action="store_true", help="台帳へ書かずに件数を確かめる")
     importer.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
     importer.set_defaults(handler=_import_command)
+    waiting = sub.add_parser("waiting", help="今日、誰の番かを案件ごとに一覧する")
+    waiting.add_argument("--all", action="store_true", help="完了した連絡なども含める")
+    waiting.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
+    waiting.add_argument("--today", type=_parse_today, help="今日の日付（YYYY-MM-DD）")
+    waiting.set_defaults(handler=_waiting_command)
+
+    add = sub.add_parser("add", help="連絡の下書きを作る")
+    add.add_argument("--ledger", help="作成する台帳名（既定の台帳を使う場合は省略）")
+    for option, help_text in (
+        ("project", "案件"),
+        ("recipient", "宛先"),
+        ("channel", "経路"),
+        ("sent-at", "送信日時"),
+        ("due", "依頼期限"),
+        ("promise", "約束"),
+        ("agreement", "合意"),
+        ("sensitive", "機微"),
+        ("basis", "根拠"),
+        ("note", "補足"),
+        ("references", "参照"),
+        ("shared-url", "共有 URL"),
+        ("body", "本文"),
+    ):
+        dest = option.replace("-", "_")
+        add.add_argument(f"--{option}", dest=dest, help=help_text)
+    add.set_defaults(handler=_add_command)
+
+    set_state = sub.add_parser("set-state", help="連絡の状態を変える")
+    set_state.add_argument("contact_id")
+    set_state.add_argument("state", choices=STATES)
+    set_state.add_argument("--expected-updated-at")
+    set_state.set_defaults(handler=_set_state_command)
+
+    reply = sub.add_parser("record-reply", help="返信の要約を記録して対応中にする")
+    reply.add_argument("contact_id")
+    reply.add_argument("--summary", required=True)
+    reply.add_argument("--expected-updated-at")
+    reply.set_defaults(handler=_record_reply_command)
+
+    show = sub.add_parser("show", help="連絡を 1 件表示する")
+    show.add_argument("contact_id")
+    show.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
+    show.set_defaults(handler=_show_command)
+
+    export = sub.add_parser("export", help="コピペ用に本文だけを出す")
+    export.add_argument("contact_id")
+    export.set_defaults(handler=_export_command)
+
+    backup = sub.add_parser("backup", help="台帳と変更履歴の控えを JSON Lines で書く")
+    backup.add_argument("--dest", type=Path, help="控えの出力先フォルダ")
+    backup.add_argument("--keep", type=_positive_int, default=DEFAULT_BACKUP_KEEP)
+    backup.set_defaults(handler=_backup_command)
+
+    serve = sub.add_parser("serve-api", help="認証付き台帳 API を起動する")
+    serve.add_argument("--host", default=DEFAULT_HOST, help="待ち受け先（既定は 127.0.0.1）")
+    serve.add_argument("--port", type=int, default=DEFAULT_PORT, help="待ち受けポート")
+    serve.add_argument("--ledger", required=True, help="配信する local 台帳名")
+    serve.add_argument("--token-env", default="DESKLY_API_TOKEN", help="Bearer token の環境変数名")
+    serve.set_defaults(handler=_serve_api_command)
+
+    move = sub.add_parser("move-ledger", help="空の台帳へ移行し、件数と ID を確認する")
+    move.add_argument("--from", dest="source", required=True, help="移行元の台帳名")
+    move.add_argument("--to", dest="target", required=True, help="移行先の台帳名")
+    move.set_defaults(handler=_move_ledger_command)
+
+    mcp = sub.add_parser("mcp", help="stdio MCP サーバーを起動する（extra mcp が必要）")
+    mcp.set_defaults(handler=_mcp_command)
     return parser
 
 

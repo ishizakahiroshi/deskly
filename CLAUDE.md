@@ -77,6 +77,12 @@ macOS / Linux では `.venv\Scripts\python` を `.venv/bin/python` に読み替�
 - 作業ノート（plan 等）は `docs/local/` に置き、追跡しない
 - 依存を足すときは、本体の依存を増やさず extra に入れる
 
+## Obsidian artifacts
+
+If `docs/obsidian/README.md` exists, use it as an index for related knowledge artifacts.
+Use the repository-relative `docs/obsidian` entry. Do not write to a central absolute
+path and do not silently fall back to `docs/local` when the entry is missing.
+
 ## secrets-scan（このリポジトリの配線）
 
 書く瞬間の責務（固有名詞の一般化・fixture は合成データ等）は上記「AI 作業共通ルール」の参照先に従う。このリポジトリ固有の配線は以下:
@@ -94,3 +100,4 @@ macOS / Linux では `.venv\Scripts\python` を `.venv/bin/python` に読み替�
 | ユーザー向け README | `README.md` |
 | Codex/他 AI 用入口 | `AGENTS.md` |
 | ローカル作業ノート（非公開） | `docs/local/`（存在する場合） |
+| Obsidian knowledge artifacts | `docs/obsidian/`（存在する場合。作業キューではない） |

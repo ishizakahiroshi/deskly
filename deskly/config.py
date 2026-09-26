@@ -5,6 +5,20 @@
 
 設定の例（値は合成）::
 
+    default_ledger = "company"
+
+    [[ledgers]]
+    name = "company"
+    label = "Work"
+    storage = "local"
+    path = "/path/to/deskly/company.sqlite3"
+
+    [[ledgers]]
+    name = "personal"
+    label = "Personal"
+    storage = "local"
+    path = "/path/to/deskly/personal.sqlite3"
+
     [[sources]]
     path = "/path/to/repo-a/docs/local/reply"
     ledger = "company"
@@ -17,7 +31,9 @@
     csv = "/path/to/excluded.csv"
     column = "name"
 
-- ``sources``: 取り込み元のフォルダ（絶対パス）と、そこから取り込む台帳（``company`` か ``personal``）
+- ``ledgers``: 台帳の名前・表示名・置き場。``local`` は絶対パスの SQLite ファイル、``server`` は API URL とトークンを読む環境変数名を持つ（server transport は C8）
+- ``default_ledger``: 新しい連絡を作るときに使う台帳。追加ごとに選ぶこともできる
+- ``sources``: 取り込み元のフォルダ（絶対パス）と、そこから取り込む台帳名
 - ``excluded_recipients``: 取り込まない宛先の一覧の CSV と、宛先が入っている列の名前
   （家族の名前などを置く。取り込み時は必須）
 """
@@ -25,11 +41,13 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 LEDGER_COMPANY = "company"
 LEDGER_PERSONAL = "personal"
@@ -57,9 +75,37 @@ class ExcludedRecipients:
 
 
 @dataclass(frozen=True)
+class LedgerDefinition:
+    """台帳の名前と置き場。server の通信処理は C8 で実装する。"""
+
+    name: str
+    label: str
+    storage: str
+    path: Path | None = None
+    url: str | None = None
+    token_env: str | None = None
+
+
+@dataclass(frozen=True)
 class Config:
     sources: tuple[ImportSource, ...] = ()
     excluded_recipients: ExcludedRecipients | None = None
+    ledgers: tuple[LedgerDefinition, ...] = ()
+    default_ledger: str | None = None
+
+    def ledger(self, name: str) -> LedgerDefinition:
+        """設定済みの台帳を返す。"""
+        for item in self.ledgers:
+            if item.name == name:
+                return item
+        raise ConfigError(f"設定に台帳 {name!r} がありません")
+
+    def local_ledger_path(self, name: str) -> Path:
+        """local 台帳のファイルを返し、server 置き場は明確に拒否する。"""
+        item = self.ledger(name)
+        if item.storage != "local" or item.path is None:
+            raise ConfigError("server 置き場は C8 の API 実装後に使えます")
+        return item.path
 
 
 def deskly_home() -> Path:
@@ -91,7 +137,13 @@ def _path_value(value: object, where: str) -> Path:
     return path
 
 
-def parse_config(data: Mapping[str, Any]) -> Config:
+def _ledger_name(value: object, where: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", value):
+        raise ConfigError(f"{where} は小文字英数字・ハイフン・下線の名前にしてください")
+    return value
+
+
+def parse_config(data: Mapping[str, Any], *, require_exclusions: bool = True) -> Config:
     """読み込んだ TOML の辞書から設定を作る。値を検査する。知らないキーは無視する。"""
     raw_sources = data.get("sources", [])
     if not isinstance(raw_sources, list):
@@ -102,27 +154,143 @@ def parse_config(data: Mapping[str, Any]) -> Config:
         if not isinstance(item, Mapping):
             raise ConfigError(f"{where} は表（path と ledger）で書いてください")
         path = _path_value(item.get("path"), f"{where}.path")
-        ledger = item.get("ledger")
-        if not isinstance(ledger, str) or ledger not in LEDGER_NAMES:
-            raise ConfigError(f"{where}.ledger は {'・'.join(LEDGER_NAMES)} のどちらかです")
+        ledger = _ledger_name(item.get("ledger"), f"{where}.ledger")
         sources.append(ImportSource(path=path, ledger=ledger))
+
+    raw_ledgers = data.get("ledgers")
+    definitions: list[LedgerDefinition] = []
+    server_endpoints: set[tuple[str, str, int]] = set()
+    if raw_ledgers is None:
+        names = list(dict.fromkeys(source.ledger for source in sources)) or [LEDGER_COMPANY]
+        unknown = set(names) - set(LEDGER_NAMES)
+        if unknown:
+            raise ConfigError(
+                f"ledgers を明示しない設定では、台帳名は {'・'.join(LEDGER_NAMES)} だけです"
+            )
+        definitions = [
+            LedgerDefinition(
+                name=name,
+                label=name,
+                storage="local",
+                path=deskly_home() / "ledger" / f"{name}.sqlite3",
+            )
+            for name in names
+        ]
+    else:
+        if not isinstance(raw_ledgers, list) or not raw_ledgers:
+            raise ConfigError("ledgers は 1 件以上の [[ledgers]] 表にしてください")
+        for index, item in enumerate(raw_ledgers, start=1):
+            where = f"ledgers[{index}]"
+            if not isinstance(item, Mapping):
+                raise ConfigError(f"{where} は表で書いてください")
+            name = _ledger_name(item.get("name"), f"{where}.name")
+            label_value = item.get("label", name)
+            if not isinstance(label_value, str) or not label_value.strip():
+                raise ConfigError(f"{where}.label は空でない文字にしてください")
+            storage = item.get("storage")
+            if storage == "local":
+                path = _path_value(item.get("path"), f"{where}.path")
+                if any(
+                    existing.storage == "local"
+                    and existing.path is not None
+                    and os.path.normcase(str(existing.path.resolve()))
+                    == os.path.normcase(str(path.resolve()))
+                    for existing in definitions
+                ):
+                    raise ConfigError("複数の local 台帳で同じファイルを使えません")
+                definitions.append(
+                    LedgerDefinition(name, label_value.strip(), "local", path=path)
+                )
+            elif storage == "server":
+                url_value = item.get("url")
+                token_env = item.get("token_env")
+                if not isinstance(url_value, str) or not url_value.strip():
+                    raise ConfigError(f"{where}.url は API の URL が必要です")
+                try:
+                    parsed_url = urlsplit(url_value.strip())
+                    port = parsed_url.port
+                    if port is not None and not 1 <= port <= 65535:
+                        raise ValueError("port out of range")
+                except ValueError as exc:
+                    raise ConfigError(f"{where}.url は正しい http(s) URL にしてください") from exc
+                if (
+                    parsed_url.scheme not in {"http", "https"}
+                    or not parsed_url.hostname
+                    or parsed_url.path not in {"", "/"}
+                    or parsed_url.username is not None
+                    or parsed_url.password is not None
+                    or parsed_url.query
+                    or parsed_url.fragment
+                ):
+                    raise ConfigError(f"{where}.url は認証情報を含まない http(s) URL にしてください")
+                if parsed_url.scheme == "http" and parsed_url.hostname not in {
+                    "localhost",
+                    "127.0.0.1",
+                    "::1",
+                }:
+                    raise ConfigError(f"{where}.url の http は loopback だけにできます")
+                endpoint = (
+                    parsed_url.scheme.casefold(),
+                    parsed_url.hostname.casefold(),
+                    port or (443 if parsed_url.scheme == "https" else 80),
+                )
+                if endpoint in server_endpoints:
+                    raise ConfigError("複数の server 台帳で同じ API を使えません")
+                server_endpoints.add(endpoint)
+                if not isinstance(token_env, str) or not re.fullmatch(
+                    r"[A-Z][A-Z0-9_]*", token_env
+                ):
+                    raise ConfigError(f"{where}.token_env は環境変数名にしてください")
+                definitions.append(
+                    LedgerDefinition(
+                        name,
+                        label_value.strip(),
+                        "server",
+                        url=url_value.strip().rstrip("/"),
+                        token_env=token_env,
+                    )
+                )
+            else:
+                raise ConfigError(f"{where}.storage は local か server にしてください")
+
+    names = [item.name for item in definitions]
+    if len(names) != len(set(names)):
+        raise ConfigError("台帳名が重複しています")
+    missing_sources = {source.ledger for source in sources} - set(names)
+    if missing_sources:
+        raise ConfigError("取り込み元が未定義の台帳を指定しています")
+
+    default_value = data.get("default_ledger")
+    if default_value is None:
+        default_ledger = LEDGER_COMPANY if LEDGER_COMPANY in names else names[0]
+    else:
+        default_ledger = _ledger_name(default_value, "default_ledger")
+        if default_ledger not in names:
+            raise ConfigError("default_ledger は定義済みの台帳にしてください")
 
     excluded: ExcludedRecipients | None = None
     raw_excluded = data.get("excluded_recipients")
     if raw_excluded is None:
-        raise ConfigError("excluded_recipients は取り込まない宛先の CSV と列を指定してください")
-    if not isinstance(raw_excluded, Mapping):
+        if require_exclusions:
+            raise ConfigError("excluded_recipients は取り込まない宛先の CSV と列を指定してください")
+    elif not isinstance(raw_excluded, Mapping):
         raise ConfigError("excluded_recipients は表（csv と column）で書いてください")
-    csv_path = _path_value(raw_excluded.get("csv"), "excluded_recipients.csv")
-    column = raw_excluded.get("column")
-    if not isinstance(column, str) or not column.strip():
-        raise ConfigError("excluded_recipients.column は列の名前（空でない文字）にしてください")
-    excluded = ExcludedRecipients(csv_path=csv_path, column=column.strip())
+    else:
+        csv_path = _path_value(raw_excluded.get("csv"), "excluded_recipients.csv")
+        column = raw_excluded.get("column")
+        if not isinstance(column, str) or not column.strip():
+            raise ConfigError("excluded_recipients.column は列の名前（空でない文字）にしてください")
+        excluded = ExcludedRecipients(csv_path=csv_path, column=column.strip())
 
-    return Config(sources=tuple(sources), excluded_recipients=excluded)
+    return Config(
+        sources=tuple(sources),
+        excluded_recipients=excluded,
+        ledgers=tuple(definitions),
+        default_ledger=default_ledger,
+    )
 
 
-def load_config(path: Path | None = None) -> Config:
+def load_config(path: Path | None = None, *, require_exclusions: bool = True) -> Config:
     """設定ファイルを読む。無い・読めないときは ``ConfigError``。"""
     target = path if path is not None else config_path()
     if not target.is_file():
@@ -131,7 +299,27 @@ def load_config(path: Path | None = None) -> Config:
         data = tomllib.loads(target.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"設定ファイルを読めません: {target}（{exc}）") from exc
-    return parse_config(data)
+    return parse_config(data, require_exclusions=require_exclusions)
+
+
+def load_ledger_config(path: Path | None = None) -> Config:
+    """読み書き用の台帳定義。設定ファイルが無ければ既定の company 1 冊を使う。"""
+    if path is not None:
+        return load_config(path, require_exclusions=False)
+    target = config_path()
+    if not target.is_file():
+        return Config(
+            ledgers=(
+                LedgerDefinition(
+                    name=LEDGER_COMPANY,
+                    label=LEDGER_COMPANY,
+                    storage="local",
+                    path=ledger_path(LEDGER_COMPANY),
+                ),
+            ),
+            default_ledger=LEDGER_COMPANY,
+        )
+    return load_config(target, require_exclusions=False)
 
 
 __all__ = [
@@ -142,9 +330,11 @@ __all__ = [
     "ConfigError",
     "ExcludedRecipients",
     "ImportSource",
+    "LedgerDefinition",
     "config_path",
     "deskly_home",
     "ledger_path",
     "load_config",
+    "load_ledger_config",
     "parse_config",
 ]

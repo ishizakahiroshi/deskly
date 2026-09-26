@@ -111,3 +111,11 @@ vendor/
 # scripts/secrets-scan.mjs は docs/local/ を除外パスに持っている。gitignore されている
 # 前提の除外なので、ここを追跡すると「一番あぶない場所だけ検査されない」状態になる。
 **/docs/local/
+
+### project-init: additions (2026-09-26)
+.commandcode/
+.cursor/
+opencode.json*
+# === obsidian-link: managed ===
+/docs/obsidian/
+# === /obsidian-link: managed ===

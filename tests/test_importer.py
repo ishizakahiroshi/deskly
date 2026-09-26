@@ -467,7 +467,7 @@ def test_dry_run_reads_existing_ledger_without_writing(
 
 
 def test_run_import_writes_to_separate_company_and_personal_ledgers(
-    tmp_path: Path, isolate_deskly_home: Path
+    tmp_path: Path, isolate_deskly_home: Path, capsys
 ) -> None:
     company = _source(tmp_path / "company", ledger=LEDGER_COMPANY)
     personal = _source(tmp_path / "personal", ledger=LEDGER_PERSONAL)
@@ -485,6 +485,48 @@ def test_run_import_writes_to_separate_company_and_personal_ledgers(
         assert len(company_store.list_contacts()) == 1
     with SqliteStore(ledger_path(LEDGER_PERSONAL)) as personal_store:
         assert len(personal_store.list_contacts()) == 1
+
+    assert main(["waiting", "--json", "--today", "2026-01-03"]) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert len(rows) == 1
+    assert rows[0]["count"] == 2
+    assert rows[0]["ledger_names"] == [LEDGER_COMPANY, LEDGER_PERSONAL]
+    assert [ref.split("/", maxsplit=1)[0] for ref in rows[0]["contact_refs"]] == [
+        LEDGER_COMPANY,
+        LEDGER_PERSONAL,
+    ]
+
+
+def test_run_import_uses_configured_local_ledger_paths(
+    tmp_path: Path, isolate_deskly_home: Path
+) -> None:
+    source = _source(tmp_path, ledger="work")
+    (source.path / "message.txt").write_text(_reply(), encoding="utf-8")
+    custom_path = tmp_path / "configured" / "work-ledger.sqlite3"
+    excluded_csv = tmp_path / "excluded.csv"
+    excluded_csv.write_text("name\nSynthetic Excluded Recipient\n", encoding="utf-8")
+    config = parse_config(
+        {
+            "default_ledger": "work",
+            "ledgers": [
+                {
+                    "name": "work",
+                    "label": "Work",
+                    "storage": "local",
+                    "path": str(custom_path),
+                }
+            ],
+            "sources": [{"path": str(source.path), "ledger": "work"}],
+            "excluded_recipients": {"csv": str(excluded_csv), "column": "name"},
+        }
+    )
+
+    report = run_import(config)
+
+    assert report.totals()["created"] == 1
+    with SqliteStore(custom_path) as store:
+        assert len(store.list_contacts()) == 1
+    assert not ledger_path(LEDGER_COMPANY).exists()
 
 
 def test_run_import_requires_at_least_one_source() -> None:

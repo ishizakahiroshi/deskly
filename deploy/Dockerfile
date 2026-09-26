@@ -1,13 +1,17 @@
-# deskly のイメージ。
-#
-# いまは仮の中身: release の RELEASE（版の情報の JSON）を /srv/healthz として返すだけ。
-# 置き場と配り方を先に確かめるためのもので、段階 1 で本物の deskly
-#（wheel を入れて `deskly serve-api` を動かす形）に差し替える。
+# Build context must include the release wheel in dist/ and its RELEASE manifest.
 FROM python:3.12-slim
 
-WORKDIR /srv
-COPY RELEASE /srv/healthz
+WORKDIR /app
+COPY dist/*.whl /tmp/wheels/
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
+COPY RELEASE /app/RELEASE
 
+ENV DESKLY_HOME=/data
+ENV DESKLY_REVISION_FILE=/app/RELEASE
+
+VOLUME ["/data"]
 EXPOSE 8765
-# コンテナの中では全アドレスで待ち受ける。外へ出すかどうかは compose の ports（127.0.0.1 だけ）で決める
-CMD ["python", "-m", "http.server", "8765", "--bind", "0.0.0.0", "--directory", "/srv"]
+LABEL org.opencontainers.image.title="deskly"
+
+# The host mapping in compose binds 127.0.0.1; the container listens on its interface.
+CMD ["deskly", "serve-api", "--host", "0.0.0.0", "--port", "8765", "--ledger", "company"]
