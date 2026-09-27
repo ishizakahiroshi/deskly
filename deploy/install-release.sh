@@ -16,6 +16,9 @@
 # 反映の流れ: 展開 → 今の版を退避して置き換え → build と起動 → healthz が新しい revision を
 # 返すまで待つ → 返さなければ前の版へ戻す。起動しただけでは成功にしない。
 set -eu
+# root の tar は既定で archive 内の権限をそのまま使う（Windows で固めると 777/666 になる）。
+# ここで作るものは、ほかの利用者が書き換えられない権限にそろえる。
+umask 022
 
 BASE=/opt/deskly
 APP="$BASE/app"
@@ -96,14 +99,35 @@ up() {
 	fi
 }
 
+# $1 の中身を root 所有・ディレクトリ 755・ファイル 644 にそろえる。
+# 通常のファイルとディレクトリ以外（symlink 等）があれば反映しない。
+# 次の反映で root が build・起動する中身なので、ほかの利用者に書き換えさせない。
+lock_down() {
+	odd="$(find "$1" ! -type f ! -type d -print | head -n 1)"
+	if [ -n "$odd" ]; then
+		log "通常のファイルでないものが含まれています: $odd"
+		return 1
+	fi
+	if [ "$(id -u)" = 0 ]; then
+		chown -R 0:0 "$1"
+	fi
+	find "$1" -type d -exec chmod 755 {} +
+	find "$1" -type f -exec chmod 644 {} +
+}
+
 # $1 のディレクトリを今の版にし、それまでの今の版を直前の版として残す
 swap_in() {
+	lock_down "$1"
 	rm -rf "$SWAP"
 	if [ -d "$CUR" ]; then
 		mv "$CUR" "$SWAP"
 	fi
 	mv "$1" "$CUR"
 	if [ -d "$SWAP" ]; then
+		# 直前の版も rollback で build するので同じ権限にそろえる
+		if ! lock_down "$SWAP"; then
+			log "直前の版の権限をそろえられませんでした。$PREV を確かめてください"
+		fi
 		rm -rf "$PREV"
 		mv "$SWAP" "$PREV"
 	fi
@@ -159,8 +183,9 @@ if [ ! -f "$ARCHIVE" ]; then
 fi
 
 rm -rf "$INCOMING"
-mkdir -p "$INCOMING"
-tar -xzf "$ARCHIVE" -C "$INCOMING"
+mkdir -m 700 "$INCOMING"
+tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$INCOMING"
+chmod 700 "$INCOMING"
 for need in Dockerfile RELEASE; do
 	if [ ! -f "$INCOMING/$need" ]; then
 		log "release に $need がありません。反映をやめます"
@@ -190,6 +215,7 @@ rm -rf "$FAILED"
 mv "$CUR" "$FAILED"
 if [ -d "$PREV" ]; then
 	mv "$PREV" "$CUR"
+	lock_down "$CUR"
 	up
 	back="$(release_revision "$CUR")"
 	if wait_for "$back" && wait_for_web; then
