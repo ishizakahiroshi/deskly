@@ -111,3 +111,6 @@ vendor/
 # scripts/secrets-scan.mjs は docs/local/ を除外パスに持っている。gitignore されている
 # 前提の除外なので、ここを追跡すると「一番あぶない場所だけ検査されない」状態になる。
 **/docs/local/
+
+# Local video production files
+/brag-output/
