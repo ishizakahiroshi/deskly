@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -37,12 +38,15 @@ button:hover {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 3px solid #f4b942;
   outline-offset: 2px;
 }
 
 .page-shell {
+  display: flex;
+  flex-direction: column;
   width: min(100% - 2rem, 76rem);
   margin: 0 auto;
   padding: 2rem 0 1.5rem;
@@ -239,6 +243,24 @@ input:focus-visible {
   text-align: center;
 }
 
+.workspace-shell { display: grid; gap: 1rem; margin-top: 1.5rem; }
+#workspace-view { order: 1; }
+#dashboard-view { order: 2; }
+.site-footer { order: 3; }
+.workspace-nav { display: flex; gap: .5rem; flex-wrap: wrap; }
+.workspace-nav button[aria-current="page"] { background: #103f51; }
+.workspace-card { border: 1px solid #d8e0e5; border-radius: .6rem; padding: .9rem; margin: .8rem 0; }
+.workspace-card h4 { margin: 0 0 .5rem; }
+.workspace-card p { margin: .3rem 0; overflow-wrap: anywhere; }
+.workspace-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.workspace-editor form { display: grid; gap: .8rem; }
+.workspace-editor label { display: grid; gap: .3rem; font-weight: 700; }
+.workspace-editor input, .workspace-editor select { width: 100%; min-height: 2.5rem; padding: .45rem; border: 1px solid #94a6b2; border-radius: .4rem; }
+.workspace-editor dl { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: .4rem .8rem; }
+.workspace-editor dd { margin: 0; overflow-wrap: anywhere; }
+.workspace-editor button { margin-right: .5rem; }
+.workspace-source-results p { overflow-wrap: anywhere; }
+
 [hidden] {
   display: none !important;
 }
@@ -283,6 +305,7 @@ input:focus-visible {
   .toolbar button {
     flex: 1;
   }
+  .workspace-fields, .workspace-editor dl { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 380px) {

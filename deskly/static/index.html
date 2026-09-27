@@ -11,6 +11,7 @@
     <title>Deskly ダッシュボード</title>
     <link rel="stylesheet" href="/static/app.css">
     <script src="/static/app.js" defer></script>
+    <script src="/static/workspace.js" defer></script>
   </head>
   <body>
     <main class="page-shell">
@@ -27,8 +28,11 @@
 
       <section id="login-view" class="panel login-panel" aria-labelledby="login-heading">
         <h2 id="login-heading">ログイン</h2>
-        <p class="muted">Deskly ダッシュボードのパスワードを入力してください。</p>
+        <p id="login-help" class="muted">Deskly ダッシュボードのパスワードを入力してください。</p>
         <form id="login-form" method="post" action="/login">
+          <label id="login-name-row" for="login-name" hidden>ログイン名
+            <input id="login-name" name="login" type="text" autocomplete="username" maxlength="120">
+          </label>
           <label for="password-input">パスワード</label>
           <input
             id="password-input"
@@ -123,6 +127,45 @@
             <p id="notification-as-of" class="muted"></p>
           </section>
         </div>
+      </section>
+      <section id="workspace-view" class="workspace-shell" hidden aria-labelledby="workspace-heading">
+        <div class="dashboard-heading">
+          <div><p class="eyebrow">WORKSPACE</p><h2 id="workspace-heading">案件の仕事</h2>
+            <p id="workspace-status" class="muted" role="status" aria-live="polite"></p></div>
+          <nav class="workspace-nav" aria-label="案件の画面">
+            <button id="workspace-refresh" type="button" class="secondary-button">台帳を再読込</button>
+            <button type="button" data-workspace-tab="all">全体</button>
+            <button type="button" data-workspace-tab="detail">案件詳細</button>
+            <button type="button" data-workspace-tab="mine">自分の仕事</button>
+            <button id="workspace-access-tab" type="button" data-workspace-tab="access" hidden>メンバーと権限</button>
+            <button id="workspace-logout" type="button" class="secondary-button" hidden>ログアウト</button>
+          </nav>
+        </div>
+        <div id="workspace-all" class="panel"></div>
+        <div id="workspace-detail" class="panel" hidden></div>
+        <div id="workspace-mine" class="panel" hidden></div>
+        <section id="workspace-access" class="panel" hidden aria-labelledby="workspace-access-heading">
+          <h3 id="workspace-access-heading">メンバーと案件権限</h3>
+          <p class="muted">メンバーの登録とパスワード設定は管理者の手元で行います。権限変更には理由を記録します。</p>
+          <div id="workspace-access-list"></div>
+          <p id="workspace-access-message" role="status" aria-live="polite"></p>
+        </section>
+        <section class="panel workspace-editor" aria-labelledby="workspace-edit-heading">
+          <h3 id="workspace-edit-heading">作成・更新</h3>
+          <p class="muted">保存前に変更内容を確認します。競合時は入力を残します。</p>
+          <form id="workspace-form">
+            <label>種類 <select id="workspace-type"><option value="project">案件</option><option value="milestone">マイルストーン</option><option value="work_item">作業</option><option value="reference">参照</option><option value="source">接続元</option></select></label>
+            <div id="workspace-fields" class="workspace-fields"></div>
+            <label>変更理由 <input id="workspace-reason" required maxlength="240" value="日常作業の更新"></label>
+            <button type="submit">変更を確認</button>
+          </form>
+          <div id="workspace-preview" hidden>
+            <h4>保存前の差分</h4><dl id="workspace-diff"></dl>
+            <button id="workspace-apply" type="button">この内容で保存</button>
+            <button id="workspace-cancel" type="button" class="secondary-button">戻る</button>
+          </div>
+          <p id="workspace-message" role="status" aria-live="polite"></p>
+        </section>
       </section>
       <footer class="site-footer">Deskly · ローカル読み取り専用</footer>
     </main>

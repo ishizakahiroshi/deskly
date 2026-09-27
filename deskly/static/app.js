@@ -4,8 +4,10 @@ const byId = (id) => document.getElementById(id);
 const loginView = byId("login-view");
 const dashboardView = byId("dashboard-view");
 const loginForm = byId("login-form");
+const loginNameInput = byId("login-name");
 const passwordInput = byId("password-input");
 const connectionStatus = byId("connection-status");
+let sharedMode = false;
 
 function clearChildren(node) {
   node.replaceChildren();
@@ -58,15 +60,17 @@ function appendField(parent, label, value) {
 
 function showLogin(message) {
   dashboardView.hidden = true;
+  if (typeof window !== "undefined") byId("workspace-view").hidden = true;
   loginView.hidden = false;
   connectionStatus.textContent = message;
-  passwordInput.focus();
+  (sharedMode ? loginNameInput : passwordInput).focus();
 }
 
 function showDashboard() {
   loginView.hidden = true;
   dashboardView.hidden = false;
   connectionStatus.textContent = "ログイン済み · 読み取り専用";
+  if (typeof window !== "undefined" && window.DesklyWorkspace) window.DesklyWorkspace.load();
 }
 
 function setSectionState(id, section) {
@@ -310,10 +314,14 @@ loginForm.addEventListener("submit", async (event) => {
     await request("/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify(sharedMode ? { login: loginNameInput.value.trim(), password } : { password }),
     });
     passwordInput.value = "";
     setText("login-message", "");
+    if (sharedMode) {
+      window.location.reload();
+      return;
+    }
     await refreshDashboard();
   } catch {
     setText("login-message", "ログインできませんでした。入力内容を確認してください。");
@@ -325,7 +333,16 @@ loginForm.addEventListener("submit", async (event) => {
 byId("refresh-button").addEventListener("click", refreshDashboard);
 byId("notification-refresh-button").addEventListener("click", refreshNotificationPreview);
 
-byId("logout-button").addEventListener("click", async () => {
+async function logoutDashboard() {
+  if (sharedMode) {
+    try {
+      await request("/logout", { method: "POST" });
+      window.location.reload();
+    } catch {
+      setText("workspace-status", "ログアウトできませんでした。もう一度お試しください。");
+    }
+    return;
+  }
   try {
     await request("/logout", { method: "POST" });
   } catch {
@@ -334,6 +351,43 @@ byId("logout-button").addEventListener("click", async () => {
   clearDashboardData();
   setText("login-message", "ログアウトしました");
   showLogin("ログアウトしました");
-});
+}
 
-refreshDashboard();
+byId("logout-button").addEventListener("click", logoutDashboard);
+byId("workspace-logout").addEventListener("click", logoutDashboard);
+
+async function startDashboard() {
+  try {
+    const mode = await requestJson("/api/mode", { method: "GET" });
+    sharedMode = mode.mode === "shared";
+  } catch {
+    // Older personal servers do not expose the mode endpoint.
+  }
+  if (!sharedMode) {
+    await refreshDashboard();
+    return;
+  }
+  window.DesklySharedMode = true;
+  byId("login-name-row").hidden = false;
+  byId("workspace-logout").hidden = false;
+  loginNameInput.required = true;
+  setText("login-help", "ログイン名とパスワードを入力してください。");
+  document.querySelector(".site-header .muted").textContent = "許可された案件と自分の仕事を確認します。";
+  document.querySelector(".site-footer").textContent = "Deskly · 共有 workspace";
+  dashboardView.hidden = true;
+  try {
+    const workspace = await requestJson("/api/workspace", { method: "GET" });
+    if (!workspace.configured) throw new Error("workspace unavailable");
+    loginView.hidden = true;
+    window.DesklyWorkspace.load();
+  } catch (error) {
+    if (error && error.status === 401) {
+      showLogin("ログインしてください");
+    } else {
+      showLogin("案件台帳を確認できません");
+      setText("login-message", "接続を確認できません。時間をおいて再度お試しください。");
+    }
+  }
+}
+
+startDashboard();

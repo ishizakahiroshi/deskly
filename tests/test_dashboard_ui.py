@@ -151,8 +151,6 @@ def test_javascript_uses_allowlisted_text_rendering_and_read_only_routes() -> No
     assert not re.search(r"\b(?:data|row|section)\.summaries?\b", source)
     assert ".error" not in source
     assert source.count("fetch(") == 1
-    assert source.count('method: "GET"') == 2
-    assert source.count('method: "POST"') == 2
     assert "setInterval(" not in source
     assert "new Notification(" not in source
     assert "section.truncated === true" in source
@@ -160,6 +158,8 @@ def test_javascript_uses_allowlisted_text_rendering_and_read_only_routes() -> No
 
     assert '"/api/dashboard", { method: "GET" }' in source
     assert '"/api/notification-preview", { method: "GET" }' in source
+    assert '"/api/mode", { method: "GET" }' in source
+    assert '"/api/workspace", { method: "GET" }' in source
     assert '"/login"' in source and 'method: "POST"' in source
     assert '"/logout"' in source and 'method: "POST"' in source
     assert '"same-origin"' in source

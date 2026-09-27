@@ -23,7 +23,7 @@ from deskly.commands import (
     record_reply,
     set_contact_state,
 )
-from deskly.config import ConfigError, load_config
+from deskly.config import ConfigError, deskly_home, load_config, workspace_settings
 from deskly.dashboard_server import (
     DEFAULT_DASHBOARD_HOST,
     DEFAULT_DASHBOARD_PORT,
@@ -33,12 +33,16 @@ from deskly.dashboard_server import (
 from deskly.importer import ImportReport, run_import
 from deskly.ledgers import load_ledgers
 from deskly.model import STATES, Contact
+from deskly.shared_mode import SharedModeUnavailable, require_local_mode
 from deskly.store import (
     LedgerError,
     LedgerStore,
     export_rows_readonly,
 )
 from deskly.views import build_waiting_rows
+from deskly.workspace_backup import export_workspace, restore_workspace
+from deskly.workspace_model import WorkspaceError
+from deskly.workspace_store import WorkspaceStore
 
 
 def format_import_report(report: ImportReport) -> str:
@@ -171,6 +175,58 @@ def _terminal_safe_text(value: str) -> str:
     )
 
 
+def _contacts_command(args: argparse.Namespace) -> int:
+    try:
+        ledgers = load_ledgers()
+        if args.contacts_action == "list":
+            entries = ledgers.list_contacts()
+        else:
+            entries = ledgers.search_contacts(args.query)
+    except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
+        print(f"deskly contacts: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        json.dump(
+            [entry.to_dict() for entry in entries],
+            sys.stdout,
+            ensure_ascii=False,
+            indent=2,
+        )
+        print()
+        return 0
+    if not entries:
+        message = (
+            "連絡はありません"
+            if args.contacts_action == "list"
+            else "該当する連絡はありません"
+        )
+        print(message)
+        return 0
+
+    heading = "連絡" if args.contacts_action == "list" else "検索結果"
+    print(f"{heading}: {len(entries)}件")
+    for entry in entries:
+        contact = entry.contact
+        project = contact.project or "案件なし"
+        recipient = contact.recipient or "なし"
+        due = contact.due or "なし"
+        inferred = "（推定）" if contact.state_inferred else ""
+        print(
+            " / ".join(
+                (
+                    f"台帳: {_terminal_safe_text(entry.ledger.label)}",
+                    f"ID: {_terminal_safe_text(contact.id)}",
+                    f"状態: {_terminal_safe_text(contact.state + inferred)}",
+                    f"案件: {_terminal_safe_text(project)}",
+                    f"宛先: {_terminal_safe_text(recipient)}",
+                    f"依頼期限: {_terminal_safe_text(due)}",
+                )
+            )
+        )
+    return 0
+
+
 def _cases_command(args: argparse.Namespace) -> int:
     try:
         result = get_case_result()
@@ -251,25 +307,45 @@ def _write_command(
 
 
 def _add_command(args: argparse.Namespace) -> int:
-    fields = {
-        name: value
-        for name, value in (
-            ("project", args.project),
-            ("recipient", args.recipient),
-            ("channel", args.channel),
-            ("sent_at", args.sent_at),
-            ("due", args.due),
-            ("promise", args.promise),
-            ("agreement", args.agreement),
-            ("sensitive", args.sensitive),
-            ("basis", args.basis),
-            ("note", args.note),
-            ("references", args.references),
-            ("shared_url", args.shared_url),
-            ("body", args.body),
-        )
-        if value is not None
-    }
+    option_fields = (
+        ("project", args.project),
+        ("recipient", args.recipient),
+        ("channel", args.channel),
+        ("sent_at", args.sent_at),
+        ("due", args.due),
+        ("promise", args.promise),
+        ("agreement", args.agreement),
+        ("sensitive", args.sensitive),
+        ("basis", args.basis),
+        ("note", args.note),
+        ("references", args.references),
+        ("shared_url", args.shared_url),
+        ("body", args.body),
+    )
+    if args.json_input:
+        if any(value is not None for _, value in option_fields):
+            print("deskly add: --json-input と個別の本文オプションは同時に使えません", file=sys.stderr)
+            return 1
+        try:
+            payload = json.load(sys.stdin)
+            if not isinstance(payload, dict):
+                raise ValueError("入力は JSON object にしてください")
+            allowed = {name for name, _ in option_fields}
+            unexpected = sorted(set(payload) - allowed)
+            if unexpected:
+                raise ValueError(f"使用できない項目があります: {', '.join(unexpected)}")
+            if any(not isinstance(value, str) for value in payload.values()):
+                raise ValueError("各項目の値は文字列にしてください")
+            fields = payload
+            if not fields.get("recipient", "").strip():
+                raise ValueError("宛先を空にできません")
+            if not fields.get("body", "").strip():
+                raise ValueError("本文を空にできません")
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+            print(f"deskly add: JSON 入力を確認してください: {exc}", file=sys.stderr)
+            return 1
+    else:
+        fields = {name: value for name, value in option_fields if value is not None}
     return _write_command(
         "add",
         lambda store: add_draft(store, fields),
@@ -434,6 +510,46 @@ def _dashboard_serve_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _workspace_command(args: argparse.Namespace) -> int:
+    home = deskly_home()
+    try:
+        if args.workspace_command == "init":
+            if workspace_settings(home) is not None or (home / "workspace.json").exists():
+                raise WorkspaceError("workspace_already_initialized", 409)
+            workspace_id, member_id = WorkspaceStore.initialize(
+                home, args.name, args.timezone, args.owner
+            )
+            with (home / "workspace.json").open("x", encoding="utf-8") as stream:
+                json.dump({"workspace_id": workspace_id}, stream)
+            print(json.dumps({"workspace_id": workspace_id, "member_id": member_id}))
+        elif args.workspace_command == "backup":
+            settings = workspace_settings(home)
+            if settings is None:
+                raise WorkspaceError("workspace_not_initialized", 404)
+            print(json.dumps(export_workspace(home, settings["workspace_id"], args.dest)))
+        elif args.workspace_command == "upgrade-access":
+            settings = workspace_settings(home)
+            if settings is None:
+                raise WorkspaceError("workspace_not_initialized", 404)
+            WorkspaceStore(home / "workspaces" / f"{settings['workspace_id']}.sqlite3").upgrade_access(
+                settings["workspace_id"], args.backup
+            )
+            print(json.dumps({"workspace_id": settings["workspace_id"], "access_schema": 2,
+                              "backup": str(args.backup)}))
+        else:
+            if (home / "workspace.json").exists():
+                raise WorkspaceError("workspace_already_initialized", 409)
+            manifest = restore_workspace(args.source, home)
+            # A restore into an empty home becomes active explicitly.
+            with (home / "workspace.json").open("x", encoding="utf-8") as stream:
+                json.dump({"workspace_id": manifest["workspace_id"]}, stream)
+            print(json.dumps(manifest))
+    except (WorkspaceError, ConfigError, OSError, sqlite3.Error) as exc:
+        print(f"deskly workspace: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _move_ledger_command(args: argparse.Namespace) -> int:
     try:
         ledgers = load_ledgers()
@@ -506,8 +622,23 @@ def build_parser() -> argparse.ArgumentParser:
     cases.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
     cases.set_defaults(handler=_cases_command)
 
+    contacts = sub.add_parser("contacts", help="連絡を全件一覧・検索する")
+    contacts_sub = contacts.add_subparsers(dest="contacts_action", required=True)
+    contact_list = contacts_sub.add_parser("list", help="全台帳の連絡を一覧する")
+    contact_list.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
+    contact_list.set_defaults(handler=_contacts_command)
+    contact_search = contacts_sub.add_parser("search", help="連絡を部分一致で検索する")
+    contact_search.add_argument("query", help="検索語")
+    contact_search.add_argument("--json", action="store_true", help="JSON 形式で結果を出す")
+    contact_search.set_defaults(handler=_contacts_command)
+
     add = sub.add_parser("add", help="連絡の下書きを作る")
     add.add_argument("--ledger", help="作成する台帳名（既定の台帳を使う場合は省略）")
+    add.add_argument(
+        "--json-input",
+        action="store_true",
+        help="JSON object を標準入力から読む（本文をコマンドライン引数に出さない）",
+    )
     for option, help_text in (
         ("project", "案件"),
         ("recipient", "宛先"),
@@ -571,6 +702,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dashboard_serve.set_defaults(handler=_dashboard_serve_command)
 
+    workspace = sub.add_parser("workspace", help="個人用 workspace の明示初期化と控え")
+    workspace_sub = workspace.add_subparsers(dest="workspace_command", required=True)
+    workspace_init = workspace_sub.add_parser("init", help="個人用 workspace を作成")
+    workspace_init.add_argument("--name", required=True)
+    workspace_init.add_argument("--timezone", default="Asia/Tokyo")
+    workspace_init.add_argument("--owner", required=True)
+    workspace_init.set_defaults(handler=_workspace_command)
+    workspace_backup = workspace_sub.add_parser("backup", help="版付き控えを作成")
+    workspace_backup.add_argument("--dest", type=Path, required=True)
+    workspace_backup.set_defaults(handler=_workspace_command)
+    workspace_upgrade = workspace_sub.add_parser("upgrade-access", help="既存 workspace の共有権限スキーマを明示追加")
+    workspace_upgrade.add_argument("--backup", type=Path, required=True)
+    workspace_upgrade.set_defaults(handler=_workspace_command)
+    workspace_restore = workspace_sub.add_parser("restore", help="空の別保存先へ復旧")
+    workspace_restore.add_argument("--source", type=Path, required=True)
+    workspace_restore.set_defaults(handler=_workspace_command)
+
     move = sub.add_parser("move-ledger", help="空の台帳へ移行し、件数と ID を確認する")
     move.add_argument("--from", dest="source", required=True, help="移行元の台帳名")
     move.add_argument("--to", dest="target", required=True, help="移行先の台帳名")
@@ -587,6 +735,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 0
+    try:
+        require_local_mode()
+    except SharedModeUnavailable as exc:
+        print(f"deskly: {exc}", file=sys.stderr)
+        return 1
     return args.handler(args)
 
 

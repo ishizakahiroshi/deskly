@@ -10,6 +10,8 @@ from deskly.cli import main
 from deskly.config import ConfigError, load_ledger_config, parse_config
 from deskly.ledgers import AmbiguousContactError, load_ledgers
 from deskly.mcp_server import add_draft as mcp_add_draft
+from deskly.mcp_server import list_contacts as mcp_list_contacts
+from deskly.mcp_server import search_contacts as mcp_search_contacts
 from deskly.mcp_server import set_state as mcp_set_state
 from deskly.model import STATE_DONE, STATE_WAITING
 from deskly.store import SqliteStore
@@ -101,6 +103,10 @@ def test_ledger_collection_merges_views_and_resolves_each_id(
                 "body": "Personal update",
             }
         )
+        history_before = {
+            work_contact.id: work.history(work_contact.id),
+            personal_contact.id: personal.history(personal_contact.id),
+        }
 
     ledgers = load_ledgers()
     rows = build_waiting_rows(ledgers.list_contacts(), today=date(2026, 9, 26))
@@ -112,6 +118,93 @@ def test_ledger_collection_merges_views_and_resolves_each_id(
     )
     assert ledgers.find_contact(work_contact.id).ledger.name == "company"
     assert ledgers.find_contact(personal_contact.id).ledger.name == "personal"
+
+    first_page = mcp_list_contacts(limit=1)
+    second_page = mcp_list_contacts(limit=1, offset=1)
+    assert first_page == {
+        "items": [work_contact.to_dict() | {"ledger": "company", "ledger_label": "Work"}],
+        "total": 2,
+        "limit": 1,
+        "offset": 0,
+        "next_offset": 1,
+    }
+    assert second_page["items"] == [
+        personal_contact.to_dict() | {"ledger": "personal", "ledger_label": "Personal"}
+    ]
+    assert second_page["next_offset"] is None
+    empty_page = mcp_list_contacts(limit=1, offset=5)
+    assert empty_page == {
+        "items": [],
+        "total": 2,
+        "limit": 1,
+        "offset": 5,
+        "next_offset": None,
+    }
+    assert [item["id"] for item in mcp_search_contacts("UPDATE", limit=1)] == [
+        work_contact.id
+    ]
+    assert [
+        item["id"] for item in mcp_search_contacts("UPDATE", limit=1, offset=1)
+    ] == [personal_contact.id]
+    with pytest.raises(ValueError, match="limit は 1 から 100"):
+        mcp_list_contacts(limit=101)
+    with pytest.raises(ValueError, match="offset は 0 以上"):
+        mcp_list_contacts(offset=-1)
+    with pytest.raises(ValueError, match="offset は 0 以上"):
+        mcp_search_contacts("UPDATE", limit=1, offset=-1)
+    with SqliteStore(work_path) as work, SqliteStore(personal_path) as personal:
+        assert work.history(work_contact.id) == history_before[work_contact.id]
+        assert personal.history(personal_contact.id) == history_before[personal_contact.id]
+
+
+def test_cli_contacts_list_and_search_across_ledgers(
+    isolate_deskly_home: Path, tmp_path: Path, capsys
+) -> None:
+    data = _ledger_config_data(tmp_path)
+    _write_config(isolate_deskly_home, data)
+    config = parse_config(data)
+    work_path = config.local_ledger_path("company")
+    personal_path = config.local_ledger_path("personal")
+    with SqliteStore(work_path) as work, SqliteStore(personal_path) as personal:
+        work_contact = work.create(
+            {
+                "id": "c-20260926-00000011",
+                "state": STATE_WAITING,
+                "project": "Synthetic\nInjected project",
+                "recipient": "Synthetic Work Recipient",
+                "body": "private synthetic body one",
+            }
+        )
+        personal_contact = personal.create(
+            {
+                "id": "c-20260926-00000012",
+                "state": STATE_DONE,
+                "project": "Synthetic Personal Project",
+                "recipient": "Synthetic Personal Recipient",
+                "body": "private synthetic body two",
+            }
+        )
+
+    assert main(["contacts", "list", "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert [(item["ledger"], item["id"]) for item in listed] == [
+        ("company", work_contact.id),
+        ("personal", personal_contact.id),
+    ]
+    assert listed[0]["body"] == "private synthetic body one"
+
+    assert main(["contacts", "search", "SYNTHETIC PERSONAL", "--json"]) == 0
+    matched = json.loads(capsys.readouterr().out)
+    assert [item["id"] for item in matched] == [personal_contact.id]
+
+    assert main(["contacts", "list"]) == 0
+    human_output = capsys.readouterr().out
+    assert "\\x0aInjected project" in human_output
+    assert "private synthetic body one" not in human_output
+    assert "private synthetic body two" not in human_output
+
+    assert main(["contacts", "search", "", "--json"]) == 1
+    assert "検索語を空にできません" in capsys.readouterr().err
 
 
 def test_cli_waits_across_ledgers_and_writes_only_to_the_selected_ledger(

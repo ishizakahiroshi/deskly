@@ -27,8 +27,34 @@ from deskly.mcp_server import (
     waiting,
 )
 from deskly.model import STATE_DONE, STATE_IN_PROGRESS, STATE_WAITING
+from deskly.shared_mode import SharedModeUnavailable
 from deskly.store import ConflictError, SqliteStore
 from deskly.views import build_waiting_rows
+
+
+def test_shared_runtime_rejects_local_owner_mcp_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deskly.mcp_server import create_server
+
+    monkeypatch.setenv("DESKLY_PUBLIC_ORIGIN", "")
+    with pytest.raises(SharedModeUnavailable, match="共有 workspace の CLI/MCP 認証経路は未実装"):
+        create_server()
+
+
+def test_shared_home_rejects_local_owner_mcp_without_shared_environment(
+    isolate_deskly_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deskly.mcp_server import create_server
+
+    for setting in ("DESKLY_WORKSPACE_ID", "DESKLY_CREDENTIAL_STORE", "DESKLY_PUBLIC_ORIGIN"):
+        monkeypatch.delenv(setting, raising=False)
+    isolate_deskly_home.mkdir()
+    (isolate_deskly_home / "shared-credentials.sqlite3").touch()
+
+    with pytest.raises(SharedModeUnavailable, match="共有 workspace の CLI/MCP 認証経路は未実装"):
+        create_server()
 
 
 @contextmanager
@@ -220,6 +246,7 @@ def test_mcp_tool_registration_and_in_memory_protocol_call(isolate_deskly_home: 
             names = {tool.name for tool in available.tools}
             assert names == {
                 "waiting",
+                "list_contacts",
                 "list_cases",
                 "show_contact",
                 "search_contacts",
@@ -230,6 +257,15 @@ def test_mcp_tool_registration_and_in_memory_protocol_call(isolate_deskly_home: 
             }
             result = await client.call_tool("waiting", {"today": "2026-09-26"})
             assert result.isError is not True
+            contacts = await client.call_tool("list_contacts", {"limit": 1})
+            assert contacts.isError is not True
+            assert _tool_payload(contacts) == {
+                "items": [],
+                "total": 0,
+                "limit": 1,
+                "offset": 0,
+                "next_offset": None,
+            }
             cases = await client.call_tool("list_cases", {})
             assert cases.isError is not True
             assert _tool_payload(cases) == {

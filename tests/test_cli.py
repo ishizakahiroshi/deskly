@@ -7,6 +7,7 @@ import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,102 @@ def test_no_subcommand_prints_help_and_succeeds(capsys: pytest.CaptureFixture[st
     assert main([]) == 0
     out = capsys.readouterr().out
     assert "usage: deskly" in out
+
+
+@pytest.mark.parametrize(
+    "shared_setting",
+    ("DESKLY_WORKSPACE_ID", "DESKLY_CREDENTIAL_STORE", "DESKLY_PUBLIC_ORIGIN"),
+)
+def test_shared_runtime_rejects_local_owner_cli_before_workspace_access(
+    isolate_deskly_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    shared_setting: str,
+) -> None:
+    monkeypatch.setenv(shared_setting, "")
+
+    assert main(["workspace", "init", "--name", "Synthetic", "--owner", "Owner"]) == 1
+    assert "共有 workspace の CLI/MCP 認証経路は未実装" in capsys.readouterr().err
+    assert not isolate_deskly_home.exists()
+
+
+@pytest.mark.parametrize("shared_file", ("shared-credentials.sqlite3", "shared-admin.lock"))
+def test_shared_home_rejects_local_owner_cli_without_shared_environment(
+    isolate_deskly_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    shared_file: str,
+) -> None:
+    for setting in ("DESKLY_WORKSPACE_ID", "DESKLY_CREDENTIAL_STORE", "DESKLY_PUBLIC_ORIGIN"):
+        monkeypatch.delenv(setting, raising=False)
+    isolate_deskly_home.mkdir()
+    marker = isolate_deskly_home / shared_file
+    marker.touch()
+
+    assert main(["workspace", "init", "--name", "Synthetic", "--owner", "Owner"]) == 1
+    assert "共有 workspace の CLI/MCP 認証経路は未実装" in capsys.readouterr().err
+    assert marker.is_file()
+    assert not (isolate_deskly_home / "workspace.json").exists()
+
+
+def test_add_accepts_json_from_stdin_without_putting_body_in_arguments(
+    isolate_deskly_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "synthetic.sqlite3"
+    _write_case_config(isolate_deskly_home, url="http://127.0.0.1:1", ledger_path=ledger_path)
+    payload = {
+        "project": "synthetic-project",
+        "recipient": "synthetic-recipient",
+        "channel": "synthetic-chat",
+        "due": "2026-10-01",
+        "note": "synthetic-topic",
+        "body": "synthetic draft body\nsecond line",
+    }
+    monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+
+    assert main(["add", "--json-input"]) == 0
+    contact_id = capsys.readouterr().out.strip().split()[-2]
+    with SqliteStore(ledger_path) as store:
+        contact = store.get(contact_id)
+        assert contact.state == "下書き"
+        assert contact.project == payload["project"]
+        assert contact.recipient == payload["recipient"]
+        assert contact.body == payload["body"]
+        assert len(store.history(contact_id)) == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_error"),
+    [
+        ("[]", "JSON object"),
+        ('{"recipient":"synthetic-recipient","body":"body","state":"完了"}', "使用できない項目"),
+        ('{"recipient":1,"body":"body"}', "値は文字列"),
+        ('{"recipient":"synthetic-recipient","body":""}', "本文を空にできません"),
+    ],
+)
+def test_add_json_input_rejects_invalid_records_before_loading_a_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    expected_error: str,
+) -> None:
+    monkeypatch.setattr("sys.stdin", StringIO(source))
+
+    assert main(["add", "--json-input"]) == 1
+    assert expected_error in capsys.readouterr().err
+
+
+def test_add_json_input_rejects_mixing_json_and_field_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("sys.stdin", StringIO('{"recipient":"synthetic","body":"body"}'))
+
+    assert main(["add", "--json-input", "--body", "also-ignored"]) == 1
+    assert "同時に使えません" in capsys.readouterr().err
 
 
 def test_unknown_subcommand_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:

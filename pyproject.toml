@@ -50,6 +50,7 @@ packages = ["deskly"]
 "deskly/static/index.html" = "deskly/static/index.html"
 "deskly/static/app.css" = "deskly/static/app.css"
 "deskly/static/app.js" = "deskly/static/app.js"
+"deskly/static/workspace.js" = "deskly/static/workspace.js"
 
 [tool.ruff]
 line-length = 100

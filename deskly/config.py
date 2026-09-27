@@ -41,6 +41,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
 import tomllib
@@ -139,6 +140,22 @@ def deskly_home() -> Path:
 
 def config_path() -> Path:
     return deskly_home() / "config.toml"
+
+
+def workspace_settings(home: Path | None = None) -> dict[str, str] | None:
+    """Read the explicit personal workspace pointer; never initialize on a GET."""
+    target = (home or deskly_home()) / "workspace.json"
+    if not target.is_file():
+        return None
+    try:
+        value = json.loads(target.read_text(encoding="utf-8"))
+        from deskly.workspace_model import uuid_text
+
+        if not isinstance(value, dict) or set(value) != {"workspace_id"}:
+            raise ValueError("invalid workspace settings")
+        return {"workspace_id": uuid_text(value["workspace_id"])}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ConfigError("workspace 設定を読めません") from exc
 
 
 def ledger_path(name: str) -> Path:

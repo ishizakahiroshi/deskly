@@ -1,4 +1,4 @@
-"""Loopback-only HTTP boundary for Deskly's read-only dashboard."""
+"""Loopback-only HTTP boundary for the legacy view and personal workspace."""
 
 from __future__ import annotations
 
@@ -7,13 +7,24 @@ import json
 import os
 import secrets
 import socket
+import sqlite3
 import time
 from collections.abc import Callable, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import Path
 from threading import BoundedSemaphore, RLock
 from typing import Any
 from urllib.parse import urlsplit
+
+from deskly.shared_auth import (
+    SHARED_SESSION_COOKIE_NAME,
+    CredentialStoreError,
+    LocalCredentialStore,
+    SharedSessions,
+)
+from deskly.workspace_access import WorkspaceAccess
+from deskly.workspace_model import WorkspaceError
 
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8766
@@ -22,15 +33,17 @@ SESSION_COOKIE_NAME = "deskly_dashboard_session"
 SESSION_TTL_SECONDS = 30 * 60
 MAX_SESSIONS = 64
 MAX_LOGIN_BODY_BYTES = 4096
+MAX_WORKSPACE_BODY_BYTES = 32768
 MAX_PROVIDER_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_ACTIVE_REQUESTS = 8
 MIN_PASSWORD_LENGTH = 16
 MAX_PASSWORD_LENGTH = 1024
-STATIC_ASSETS = frozenset({"index.html", "app.css", "app.js"})
+STATIC_ASSETS = frozenset({"index.html", "app.css", "app.js", "workspace.js"})
 STATIC_CONTENT_TYPES = {
     "index.html": "text/html; charset=utf-8",
     "app.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
+    "workspace.js": "text/javascript; charset=utf-8",
 }
 _INDEX_FALLBACK = (
     b"<!doctype html><html lang=\"ja\"><meta charset=\"utf-8\">"
@@ -58,11 +71,23 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         password: str,
         dashboard_provider: DashboardProvider | None,
         notification_provider: DashboardProvider | None,
+        workspace_service: Any | None = None,
+        shared_accounts: LocalCredentialStore | None = None,
+        shared_home: Path | None = None,
+        shared_workspace_id: str | None = None,
+        shared_origin: str | None = None,
     ) -> None:
         super().__init__(address, DashboardRequestHandler)
         self.password_bytes = password.encode("utf-8")
         self.dashboard_provider = dashboard_provider
         self.notification_provider = notification_provider
+        self.workspace_service = workspace_service
+        self.shared_accounts = shared_accounts
+        self.shared_sessions = SharedSessions(shared_accounts) if shared_accounts else None
+        self.shared_home = shared_home
+        self.shared_workspace_id = shared_workspace_id
+        self.shared_origin = shared_origin
+        self.shared_secret = secrets.token_bytes(32) if shared_accounts else None
         self.sessions: dict[str, float] = {}
         self.sessions_lock = RLock()
         self._request_slots = BoundedSemaphore(MAX_ACTIVE_REQUESTS)
@@ -95,6 +120,10 @@ class DashboardHTTPServer(ThreadingHTTPServer):
             self._request_slots.release()
 
     def _reject_busy_request(self, request: socket.socket) -> None:
+        # Closing a socket with unread request bytes can discard the response
+        # (notably as WSAECONNABORTED on Windows). Keep the accept loop bounded
+        # while consuming a complete, reasonably sized request when available.
+        self._drain_busy_request(request)
         body = b'{"error":"dashboard_busy"}'
         headers = (
             "HTTP/1.0 503 Service Unavailable\r\n"
@@ -108,6 +137,52 @@ class DashboardHTTPServer(ThreadingHTTPServer):
             request.sendall(headers + body)
         except OSError:
             pass
+
+    @staticmethod
+    def _drain_busy_request(request: socket.socket) -> None:
+        deadline = time.monotonic() + 0.05
+        max_headers = 8192
+        max_body = MAX_WORKSPACE_BODY_BYTES
+        received = bytearray()
+        expected_length: int | None = None
+        original_timeout = request.gettimeout()
+        try:
+            while len(received) < max_headers + max_body:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                request.settimeout(remaining)
+                try:
+                    chunk = request.recv(min(4096, max_headers + max_body - len(received)))
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                received.extend(chunk)
+                if expected_length is None:
+                    header_end = received.find(b"\r\n\r\n")
+                    if header_end < 0:
+                        if len(received) >= max_headers:
+                            break
+                        continue
+                    expected_length = header_end + 4
+                    content_lengths = [
+                        line.split(b":", 1)[1].strip()
+                        for line in bytes(received[:header_end]).split(b"\r\n")[1:]
+                        if line.lower().startswith(b"content-length:")
+                    ]
+                    if (
+                        len(content_lengths) == 1
+                        and len(content_lengths[0]) <= len(str(max_body))
+                        and content_lengths[0].isdigit()
+                    ):
+                        body_length = int(content_lengths[0])
+                        if body_length <= max_body:
+                            expected_length += body_length
+                if expected_length is not None and len(received) >= expected_length:
+                    break
+        finally:
+            request.settimeout(original_timeout)
 
     def create_session(self) -> str:
         now = time.monotonic()
@@ -210,6 +285,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         host_values = self.headers.get_all("Host", [])
         if len(host_values) != 1:
             return False
+        if self.server.shared_origin is not None:
+            if self.path == "/healthz" and host_values[0] in {
+                f"127.0.0.1:{self.server.server_port}",
+                f"localhost:{self.server.server_port}",
+            }:
+                return True
+            return host_values[0].casefold() == urlsplit(self.server.shared_origin).netloc.casefold()
         try:
             raw_host = host_values[0]
             if not raw_host or any(ord(char) <= 0x20 or ord(char) == 0x7F for char in raw_host):
@@ -231,6 +313,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     def _same_origin(self, *, required: bool) -> bool:
         origins = self.headers.get_all("Origin", [])
+        if self.server.shared_origin is not None:
+            if (required or origins) and (len(origins) != 1 or origins[0] != self.server.shared_origin):
+                return False
+            fetch_sites = self.headers.get_all("Sec-Fetch-Site", [])
+            return len(fetch_sites) <= 1 and (
+                not fetch_sites or fetch_sites[0].casefold() == "same-origin"
+            )
         if not origins:
             if required:
                 return False
@@ -284,9 +373,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if len(cookie_headers) != 1:
             return None
         found: str | None = None
+        expected_name = SHARED_SESSION_COOKIE_NAME if self.server.shared_sessions else SESSION_COOKIE_NAME
         for cookie in cookie_headers[0].split(";"):
             name, separator, value = cookie.strip().partition("=")
-            if name != SESSION_COOKIE_NAME:
+            if name != expected_name:
                 continue
             if not separator or found is not None:
                 return None
@@ -297,10 +387,110 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     def _authenticated(self) -> bool:
         session_id = self._session_id()
+        if self.server.shared_sessions is not None:
+            try:
+                if session_id is not None and self.server.shared_sessions.subject(session_id):
+                    return True
+            except (OSError, sqlite3.Error, CredentialStoreError):
+                self._send_json(503, {"error": "auth_unavailable"})
+                return False
+            self._send_json(401, {"error": "unauthorized"})
+            return False
         if session_id is not None and self.server.valid_session(session_id):
             return True
         self._send_json(401, {"error": "unauthorized"})
         return False
+
+    def _workspace_service(self) -> Any | None:
+        if self.server.shared_sessions is None:
+            return self.server.workspace_service
+        token = self._session_id()
+        subject = self.server.shared_sessions.subject(token) if token else None
+        if subject is None:
+            raise WorkspaceError("unauthorized", 401)
+        from deskly.workspace_service import WorkspaceService
+
+        assert self.server.shared_home is not None
+        assert self.server.shared_workspace_id is not None
+        assert self.server.shared_secret is not None
+        service = WorkspaceService(self.server.shared_home, self.server.shared_workspace_id,
+                                   secret=self.server.shared_secret,
+                                   identity=(self.server.shared_origin or "", subject))
+        service.principal()  # Recheck membership and active state on every request.
+        return service
+
+    def _shared_access(self, service: Any) -> WorkspaceAccess:
+        if self.server.shared_sessions is None:
+            raise WorkspaceError("not_found", 404)
+        access = WorkspaceAccess(service.store, service.workspace_id, service.principal())
+        with service.store.connect() as db:
+            access._owner(db)
+        return access
+
+    @staticmethod
+    def _shared_command_allowed(value: object) -> bool:
+        """Initial shared Web accepts only local md and HTTPS references."""
+        if not isinstance(value, dict):
+            return True  # Let the workspace service return the schema error.
+        request = value.get("request", value)
+        if not isinstance(request, dict):
+            return True
+        kind = request.get("type")
+        if kind == "source":
+            return False
+        if kind != "reference":
+            return True
+        for snapshot in (request.get("data"), value.get("before"), value.get("after")):
+            if isinstance(snapshot, dict) and snapshot.get("kind") not in {"md", "https"}:
+                return False
+        return True
+
+    @staticmethod
+    def _shared_workspace_result(path: str, result: Any, service: Any) -> Any:
+        if not isinstance(result, dict):
+            return result
+        principal = service.principal()
+        if principal.role == "owner":
+            permissions: dict[str, str] = {}
+            fallback = "owner"
+        else:
+            with service.store.connect() as db:
+                permissions = {row["project_id"]: row["role"] for row in db.execute(
+                    """SELECT project_id,role FROM project_memberships
+                    WHERE workspace_id=? AND member_id=? AND role IS NOT NULL""",
+                    (service.workspace_id, principal.member_id))}
+            fallback = ""
+        if path.endswith("/projects"):
+            return {**result, "sources": [],
+                    "projects": [{**item, "permission": permissions.get(item["id"], fallback)}
+                                 for item in result["projects"]
+                                 if principal.role == "owner" or item["id"] in permissions],
+                    "archived_projects": [{**item, "permission": permissions.get(item["id"], fallback)}
+                                          for item in result["archived_projects"]
+                                          if principal.role == "owner" or item["id"] in permissions]}
+        if path.endswith("/history"):
+            if principal.role != "owner" and result.get("project_id") not in permissions:
+                raise WorkspaceError("not_found", 404)
+            events = []
+            for event in result.get("events", []):
+                snapshots = (event.get("before"), event.get("after"))
+                if any(isinstance(item, dict) and (
+                    item.get("type") in {"source", "observation"}
+                    or (item.get("type") == "reference" and item.get("kind") not in {"md", "https"})
+                ) for item in snapshots):
+                    continue
+                events.append(event)
+            return {**result, "events": events}
+        if "references" in result and "external" in result:
+            if principal.role != "owner" and result["project"]["id"] not in permissions:
+                raise WorkspaceError("not_found", 404)
+            return {**result,
+                    "project": {**result["project"],
+                                "permission": permissions.get(result["project"]["id"], fallback)},
+                    "references": [item for item in result["references"]
+                                   if item.get("kind") in {"md", "https"}],
+                    "external": {"status": "not_connected", "observations": []}}
+        return result
 
     def _read_login_password(self) -> tuple[str | None, int]:
         content_types = self.headers.get_all("Content-Type", [])
@@ -342,6 +532,98 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if any(0xD800 <= ord(character) <= 0xDFFF for character in password):
             return None, 400
         return password, 200
+
+    def _read_workspace_json(self) -> object:
+        content_types = self.headers.get_all("Content-Type", [])
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(content_types) != 1 or content_types[0].split(";", 1)[0].strip().lower() != "application/json":
+            raise ValueError("content_type")
+        if self.headers.get_all("Transfer-Encoding", []) or len(lengths) != 1 or not lengths[0].isdecimal():
+            raise ValueError("length")
+        if len(lengths[0]) > len(str(MAX_WORKSPACE_BODY_BYTES)) or int(lengths[0]) > MAX_WORKSPACE_BODY_BYTES:
+            raise OverflowError("body_too_large")
+        length = int(lengths[0])
+        raw = self.rfile.read(length)
+        if len(raw) != length:
+            raise ValueError("length")
+
+        def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            value: dict[str, Any] = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate_key")
+                value[key] = item
+            return value
+
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object)
+
+    def _workspace_get(self, path: str) -> bool:
+        if path == "/api/workspace":
+            if not self._authenticated():
+                return True
+            try:
+                service = self._workspace_service()
+            except WorkspaceError as exc:
+                self._send_json(exc.status, {"error": exc.code})
+                return True
+            except (OSError, sqlite3.Error, CredentialStoreError):
+                self._send_json(503, {"error": "workspace_unavailable"})
+                return True
+            result = {"configured": service is not None,
+                      "workspace_id": service.workspace_id if service else None}
+            if self.server.shared_sessions is not None and service is not None:
+                try:
+                    principal = service.principal()
+                except WorkspaceError as exc:
+                    self._send_json(exc.status, {"error": exc.code})
+                    return True
+                except (OSError, sqlite3.Error):
+                    self._send_json(503, {"error": "workspace_unavailable"})
+                    return True
+                result.update({"member_id": principal.member_id, "role": principal.role})
+            self._send_json(200, result)
+            return True
+        if not path.startswith("/api/workspaces/"):
+            return False
+        if not self._authenticated():
+            return True
+        try:
+            service = self._workspace_service()
+        except WorkspaceError as exc:
+            self._send_json(exc.status, {"error": exc.code})
+            return True
+        except (OSError, sqlite3.Error, CredentialStoreError):
+            self._send_json(503, {"error": "workspace_unavailable"})
+            return True
+        if service is None:
+            self._send_json(404, {"error": "workspace_not_initialized"})
+            return True
+        parts = path.strip("/").split("/")
+        if len(parts) < 4 or parts[2] != service.workspace_id:
+            self._send_json(404, {"error": "workspace_not_found"})
+            return True
+        try:
+            if len(parts) == 4 and parts[3] == "projects":
+                result = service.projects()
+            elif len(parts) == 4 and parts[3] == "my-work":
+                result = service.my_work()
+            elif len(parts) == 5 and parts[3] == "projects":
+                result = service.detail(parts[4])
+            elif len(parts) == 6 and parts[3] == "projects" and parts[5] == "history":
+                result = service.history(parts[4])
+            elif len(parts) == 5 and parts[3:] == ["access", "members"]:
+                result = self._shared_access(service).members_and_grants()
+            else:
+                self._send_json(404, {"error": "not_found"})
+                return True
+            if self.server.shared_sessions is not None:
+                result = self._shared_workspace_result(path, result, service)
+            self._send_json(200, result)
+        except WorkspaceError as exc:
+            self._send_json(exc.status, {"error": exc.code})
+        except (OSError, sqlite3.Error):
+            self._send_json(503, {"error": "workspace_unavailable"})
+        return True
 
     def _load_static_asset(self, filename: str) -> bytes | None:
         if filename not in STATIC_ASSETS:
@@ -428,6 +710,36 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if path is None:
             self._send_json(400, {"error": "invalid_request"})
             return
+        if path == "/api/mode":
+            self._send_json(200, {"mode": "shared" if self.server.shared_sessions else "personal"})
+            return
+        if path == "/healthz" and self.server.shared_accounts is not None:
+            try:
+                from deskly.workspace_store import SCHEMA_VERSION, WorkspaceStore, workspace_path
+
+                assert self.server.shared_home is not None
+                assert self.server.shared_workspace_id is not None
+                store = WorkspaceStore(workspace_path(self.server.shared_home,
+                                                       self.server.shared_workspace_id))
+                with store.connect() as db:
+                    row = db.execute("SELECT schema_version FROM metadata WHERE workspace_id=?",
+                                     (self.server.shared_workspace_id,)).fetchone()
+                ready = False
+                if row is not None and row[0] == SCHEMA_VERSION:
+                    for subject in self.server.shared_accounts.active_subjects():
+                        try:
+                            principal = store.identity_principal(self.server.shared_workspace_id,
+                                                                 self.server.shared_origin or "", subject)
+                        except WorkspaceError:
+                            continue
+                        if principal.role == "owner":
+                            ready = True
+                            break
+                self._send_json(200 if ready else 503,
+                                {"status": "ok" if ready else "unavailable"})
+            except (OSError, sqlite3.Error, WorkspaceError, CredentialStoreError):
+                self._send_json(503, {"status": "unavailable"})
+            return
         if path == "/":
             body = self._load_static_asset("index.html") or _INDEX_FALLBACK
             self._send_bytes(200, body, "text/html; charset=utf-8")
@@ -440,7 +752,16 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_bytes(200, asset_body, STATIC_CONTENT_TYPES[filename])
             return
+        if path.startswith("/api/workspace"):
+            if not self._same_origin(required=False):
+                self._send_json(403, {"error": "same_origin_required"})
+                return
+            if self._workspace_get(path):
+                return
         if path not in {"/api/dashboard", "/api/notification-preview"}:
+            self._send_json(404, {"error": "not_found"})
+            return
+        if self.server.shared_sessions is not None:
             self._send_json(404, {"error": "not_found"})
             return
         if not self._same_origin(required=False):
@@ -468,6 +789,53 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid_request"})
             return
         if path == "/login":
+            if self.server.shared_sessions is not None:
+                try:
+                    lengths = self.headers.get_all("Content-Length", [])
+                    if len(lengths) != 1 or not lengths[0].isdecimal() or int(lengths[0]) > MAX_LOGIN_BODY_BYTES:
+                        raise ValueError("invalid length")
+                    payload = self._read_workspace_json()
+                    if not isinstance(payload, dict) or set(payload) != {"login", "password"}:
+                        raise ValueError("invalid fields")
+                    login, password = payload["login"], payload["password"]
+                    if not isinstance(login, str) or not isinstance(password, str):
+                        raise ValueError("invalid fields")
+                except (ValueError, UnicodeDecodeError, OverflowError):
+                    self._send_json(400, {"error": "invalid_login_request"})
+                    return
+                throttle_key = f"{self.client_address[0]}:{login}"
+                if not self.server.shared_sessions.allowed_login(throttle_key):
+                    self._send_json(429, {"error": "login_throttled"})
+                    return
+                try:
+                    account = self.server.shared_accounts.authenticate(login, password)  # type: ignore[union-attr]
+                    if account is None:
+                        self.server.shared_sessions.record_failure(throttle_key)
+                        self._send_json(401, {"error": "unauthorized"})
+                        return
+                    from deskly.workspace_service import WorkspaceService
+
+                    assert self.server.shared_home is not None
+                    assert self.server.shared_workspace_id is not None
+                    assert self.server.shared_secret is not None
+                    login_service = WorkspaceService(self.server.shared_home, self.server.shared_workspace_id,
+                                                     secret=self.server.shared_secret,
+                                                     identity=(self.server.shared_origin or "", account[0]))
+                    login_service.principal()
+                except WorkspaceError:
+                    self.server.shared_sessions.record_failure(throttle_key)
+                    self._send_json(401, {"error": "unauthorized"})
+                    return
+                except (OSError, sqlite3.Error, CredentialStoreError):
+                    self._send_json(503, {"error": "auth_unavailable"})
+                    return
+                session_id = self.server.shared_sessions.create(*account)
+                self.server.shared_sessions.record_success(throttle_key)
+                cookie = (f"{SHARED_SESSION_COOKIE_NAME}={session_id}; Path=/; "
+                          f"Max-Age=1800; Secure; HttpOnly; SameSite=Strict")
+                self._send_json(200, {"authenticated": True},
+                                extra_headers=(("Set-Cookie", cookie),))
+                return
             password, status = self._read_login_password()
             if status != 200 or password is None:
                 self._send_json(status, {"error": "invalid_login_request"})
@@ -494,10 +862,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "invalid_logout_request"})
                 return
             logout_session_id = self._session_id()
-            if logout_session_id is None or not self.server.valid_session(logout_session_id):
+            valid = (self.server.shared_sessions.subject(logout_session_id)
+                     if self.server.shared_sessions and logout_session_id else
+                     self.server.valid_session(logout_session_id) if logout_session_id else None)
+            if not valid:
                 self._send_json(401, {"error": "unauthorized"})
                 return
-            self.server.remove_session(logout_session_id)
+            assert logout_session_id is not None
+            if self.server.shared_sessions:
+                self.server.shared_sessions.remove(logout_session_id)
+            else:
+                self.server.remove_session(logout_session_id)
             self._send_bytes(
                 204,
                 b"",
@@ -505,10 +880,107 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 extra_headers=(
                     (
                         "Set-Cookie",
-                        f"{SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict",
+                        (f"{SHARED_SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict"
+                         if self.server.shared_sessions else
+                         f"{SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"),
                     ),
                 ),
             )
+            return
+        if path.startswith("/api/workspaces/"):
+            if not self._authenticated():
+                return
+            try:
+                service = self._workspace_service()
+            except WorkspaceError as exc:
+                self._send_json(exc.status, {"error": exc.code})
+                return
+            except (OSError, sqlite3.Error, CredentialStoreError):
+                self._send_json(503, {"error": "workspace_unavailable"})
+                return
+            parts = path.strip("/").split("/")
+            if (self.server.shared_sessions is not None and service is not None
+                and len(parts) >= 5 and parts[2] == service.workspace_id
+                and parts[3] == "access"):
+                try:
+                    access = self._shared_access(service)
+                    payload = self._read_workspace_json()
+                    if not isinstance(payload, dict):
+                        raise WorkspaceError("invalid_request")
+                    if len(parts) == 5 and parts[4] == "grants":
+                        if set(payload) != {"project_id", "member_id", "role", "expected_version",
+                                            "operation_id", "reason"}:
+                            raise WorkspaceError("invalid_request")
+                        result = access.set_project_role(
+                            payload["project_id"], payload["member_id"], payload["role"],
+                            expected_version=payload["expected_version"],
+                            operation_id=payload["operation_id"], reason=payload["reason"])
+                    elif len(parts) == 7 and parts[4] == "members" and parts[6] == "deactivate":
+                        if set(payload) != {"expected_version", "operation_id", "reason"}:
+                            raise WorkspaceError("invalid_request")
+                        if isinstance(payload["expected_version"], bool) or payload["expected_version"] != 1:
+                            raise WorkspaceError("version_conflict", 409)
+                        from deskly.workspace_model import uuid_text
+
+                        member_id = uuid_text(parts[5])
+                        with service.store.connect() as db:
+                            identity = db.execute("""SELECT subject FROM identities
+                                WHERE workspace_id=? AND member_id=? AND issuer=?""",
+                                (service.workspace_id, member_id, self.server.shared_origin)).fetchone()
+                        if identity is None:
+                            raise WorkspaceError("invalid_member", 403)
+                        result = access.deactivate_member(member_id,
+                            expected_version=payload["expected_version"],
+                            operation_id=payload["operation_id"], reason=payload["reason"])
+                        assert self.server.shared_accounts is not None
+                        if identity["subject"] in self.server.shared_accounts.active_subjects():
+                            self.server.shared_accounts.deactivate(identity["subject"])
+                    else:
+                        self._send_json(404, {"error": "not_found"})
+                        return
+                    self._send_json(200, result)
+                except OverflowError:
+                    self._send_json(413, {"error": "body_too_large"})
+                except WorkspaceError as exc:
+                    self._send_json(exc.status, {"error": exc.code})
+                except (ValueError, UnicodeDecodeError):
+                    self._send_json(400, {"error": "invalid_request"})
+                except (OSError, sqlite3.Error, CredentialStoreError):
+                    self._send_json(503, {"error": "workspace_unavailable"})
+                return
+            if service is None or len(parts) != 5 or parts[2] != service.workspace_id or (
+                (parts[3] != "commands" or parts[4] not in {"preview", "apply"})
+                and (parts[3], parts[4]) != ("sources", "fetch")
+            ):
+                self._send_json(404, {"error": "not_found"})
+                return
+            if self.server.shared_sessions is not None and parts[3] == "sources":
+                self._send_json(404, {"error": "not_found"})
+                return
+            try:
+                payload = self._read_workspace_json()
+                if parts[3] == "sources":
+                    if not isinstance(payload, dict) or set(payload) != {"project_id"}:
+                        raise WorkspaceError("invalid_request")
+                    result = service.fetch_sources(payload["project_id"])
+                else:
+                    if self.server.shared_sessions is not None and not self._shared_command_allowed(payload):
+                        self._send_json(404, {"error": "not_found"})
+                        return
+                    result = service.preview(payload) if parts[4] == "preview" else service.apply(payload)
+                    if self.server.shared_sessions is not None and not self._shared_command_allowed(result):
+                        self._send_json(404, {"error": "not_found"})
+                        return
+                self._send_json(200, result)
+            except OverflowError:
+                self._send_json(413, {"error": "body_too_large"})
+            except (ValueError, UnicodeDecodeError) as exc:
+                if isinstance(exc, WorkspaceError):
+                    self._send_json(exc.status, {"error": exc.code})
+                else:
+                    self._send_json(400, {"error": "invalid_request"})
+            except (OSError, sqlite3.Error):
+                self._send_json(503, {"error": "workspace_unavailable"})
             return
         self._method_not_allowed()
 
@@ -534,6 +1006,7 @@ def create_dashboard_server(
     environ: Mapping[str, str] | None = None,
     dashboard_provider: DashboardProvider | None = None,
     notification_provider: DashboardProvider | None = None,
+    workspace_service: Any | None = None,
 ) -> DashboardHTTPServer:
     """Create a loopback-only server; providers are called only after login."""
     if host != DEFAULT_DASHBOARD_HOST:
@@ -541,12 +1014,61 @@ def create_dashboard_server(
     if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
         raise DashboardConfigurationError("dashboard port is invalid")
     password = _dashboard_password(environ)
+    if workspace_service is None:
+        import secrets as workspace_secrets
+
+        from deskly.config import deskly_home, workspace_settings
+        from deskly.workspace_service import WorkspaceService
+
+        settings = workspace_settings()
+        if settings is not None:
+            workspace_service = WorkspaceService(
+                deskly_home(), settings["workspace_id"], secret=workspace_secrets.token_bytes(32)
+            )
     return DashboardHTTPServer(
         (host, port),
         password,
         dashboard_provider,
         notification_provider,
+        workspace_service,
     )
+
+
+def create_shared_dashboard_server(
+    *,
+    home: Path,
+    workspace_id: str,
+    credential_store: Path,
+    public_origin: str,
+    host: str = "0.0.0.0",
+    port: int = DEFAULT_DASHBOARD_PORT,
+) -> DashboardHTTPServer:
+    """Build the separate shared Web entrypoint behind an HTTPS reverse proxy.
+
+    The caller must publish this port only to a private ingress network. This
+    function never enables legacy dashboard/communication-ledger providers.
+    """
+    from deskly.workspace_model import uuid_text
+
+    try:
+        origin = urlsplit(public_origin)
+        if (origin.scheme != "https" or not origin.hostname or origin.username is not None
+            or origin.password is not None or origin.path or origin.query or origin.fragment
+            or origin.port not in {None, 443} or public_origin != f"https://{origin.hostname}"):
+            raise ValueError("invalid origin")
+        workspace_id = uuid_text(workspace_id)
+        if not home.is_absolute() or not credential_store.is_absolute():
+            raise ValueError("paths must be absolute")
+        if host not in {"0.0.0.0", "127.0.0.1"}:
+            raise ValueError("invalid bind host")
+        if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
+            raise ValueError("invalid port")
+        accounts = LocalCredentialStore(credential_store)
+    except (ValueError, CredentialStoreError) as exc:
+        raise DashboardConfigurationError("shared Web configuration is invalid") from exc
+    return DashboardHTTPServer((host, port), "", None, None, None,
+                               shared_accounts=accounts, shared_home=home,
+                               shared_workspace_id=workspace_id, shared_origin=public_origin)
 
 
 def serve_dashboard(
@@ -572,5 +1094,6 @@ __all__ = [
     "MAX_PROVIDER_RESPONSE_BYTES",
     "MAX_SESSIONS",
     "create_dashboard_server",
+    "create_shared_dashboard_server",
     "serve_dashboard",
 ]

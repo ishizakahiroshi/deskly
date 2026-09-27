@@ -18,21 +18,12 @@ from deskly.commands import (
 from deskly.commands import (
     set_contact_state,
 )
-from deskly.ledgers import LedgerContact, load_ledgers
+from deskly.ledgers import LedgerContact, load_ledgers, paginate_contact_entries
 from deskly.model import STATE_DRAFT, normalize_field, validate_state
+from deskly.shared_mode import require_local_mode
 from deskly.views import build_waiting_rows
 
 MCP_ACTOR = "mcp"
-_SEARCH_FIELDS = (
-    "project",
-    "recipient",
-    "channel",
-    "promise",
-    "agreement",
-    "basis",
-    "note",
-    "body",
-)
 _DRAFT_FIELDS = (
     "project",
     "recipient",
@@ -87,22 +78,19 @@ def show_contact(contact_id: str) -> dict[str, Any]:
     return load_ledgers().find_contact(contact_id).to_dict()
 
 
-def search_contacts(query: str, limit: int = 20) -> list[dict[str, Any]]:
+def list_contacts(limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    """Read one page of all contacts across configured ledgers."""
+    return load_ledgers().page_contacts(limit=limit, offset=offset)
+
+
+def search_contacts(
+    query: str, limit: int = 20, offset: int = 0
+) -> list[dict[str, Any]]:
     """案件・宛先・経路・約束・合意・根拠・補足・本文を部分一致で探す。"""
-    needle = query.strip().casefold()
-    if not needle:
-        raise ValueError("検索語を空にできません")
-    if not 1 <= limit <= 100:
-        raise ValueError("limit は 1 から 100 にしてください")
-    matches = [
-        entry
-        for entry in load_ledgers().list_contacts()
-        if any(
-            needle in getattr(entry.contact, field).casefold()
-            for field in _SEARCH_FIELDS
-        )
-    ]
-    return [entry.to_dict() for entry in matches[:limit]]
+    ledgers = load_ledgers()
+    matches = ledgers.search_contacts(query)
+    page, _, _ = paginate_contact_entries(matches, limit=limit, offset=offset)
+    return [entry.to_dict() for entry in page]
 
 
 def add_draft(
@@ -244,14 +232,16 @@ def export_text(contact_id: str) -> str:
 
 def create_server() -> Any:
     """FastMCP を遅延 import して tool を登録する。"""
+    require_local_mode()
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("deskly")
     for name, description, function in (
         ("waiting", "案件ごとの現在の連絡待ち一覧", waiting),
+        ("list_contacts", "全台帳の連絡をページ単位で一覧する読み取り専用の道具", list_contacts),
         ("list_cases", "issuepost の案件と関連する連絡を読み取り専用で一覧する", list_cases),
         ("show_contact", "連絡 1 件の全欄を読む", show_contact),
-        ("search_contacts", "連絡を部分一致で検索する", search_contacts),
+        ("search_contacts", "連絡を部分一致で検索し offset で続きも取得する", search_contacts),
         ("add_draft", "下書きをプレビューまたは承認付きで作成する", add_draft),
         ("set_state", "状態変更をプレビューまたは承認付きで適用する", set_state),
         ("record_reply", "返信要約をプレビューまたは承認付きで記録する", record_reply),
@@ -270,6 +260,7 @@ __all__ = [
     "add_draft",
     "create_server",
     "export_text",
+    "list_contacts",
     "list_cases",
     "record_reply",
     "run_stdio_server",

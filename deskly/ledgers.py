@@ -17,6 +17,18 @@ from deskly.store import (
     list_contacts_readonly,
 )
 
+_SEARCH_FIELDS = (
+    "project",
+    "recipient",
+    "channel",
+    "promise",
+    "agreement",
+    "basis",
+    "note",
+    "body",
+)
+_MAX_CONTACT_PAGE_SIZE = 100
+
 
 class AmbiguousContactError(ValueError):
     """同じ ID が複数の台帳にあり、書き込み先を決められない。"""
@@ -34,6 +46,24 @@ class LedgerContact:
         result["ledger"] = self.ledger.name
         result["ledger_label"] = self.ledger.label
         return result
+
+
+def paginate_contact_entries(
+    contacts: list[LedgerContact], *, limit: int, offset: int
+) -> tuple[list[LedgerContact], int, int | None]:
+    """Validate and slice a stable contact list for read-only pagination."""
+    if (
+        isinstance(limit, bool)
+        or not isinstance(limit, int)
+        or not 1 <= limit <= _MAX_CONTACT_PAGE_SIZE
+    ):
+        raise ValueError("limit は 1 から 100 にしてください")
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        raise ValueError("offset は 0 以上の整数にしてください")
+    total = len(contacts)
+    page = contacts[offset : offset + limit]
+    next_offset = offset + len(page) if offset + len(page) < total else None
+    return page, total, next_offset
 
 
 class LedgerCollection:
@@ -87,6 +117,33 @@ class LedgerCollection:
                     found = store.list_contacts()
             contacts.extend(LedgerContact(definition, contact) for contact in found)
         return contacts
+
+    def search_contacts(self, query: str) -> list[LedgerContact]:
+        """Search all configured ledgers by the shared case-insensitive fields."""
+        needle = query.strip().casefold()
+        if not needle:
+            raise ValueError("検索語を空にできません")
+        return [
+            entry
+            for entry in self.list_contacts()
+            if any(
+                needle in getattr(entry.contact, field).casefold()
+                for field in _SEARCH_FIELDS
+            )
+        ]
+
+    def page_contacts(self, *, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        """Return one bounded page across all configured ledgers."""
+        page, total, next_offset = paginate_contact_entries(
+            self.list_contacts(), limit=limit, offset=offset
+        )
+        return {
+            "items": [entry.to_dict() for entry in page],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "next_offset": next_offset,
+        }
 
     def find_contact(self, contact_id: str) -> LedgerContact:
         """ID の所属台帳を探す。同一 ID が複数にあれば誤更新を防ぐため拒否する。"""

@@ -360,6 +360,25 @@ def test_concurrent_requests_are_capped_and_excess_request_is_rejected(
     assert first_response and first_response[0][0] == 200
 
 
+def test_busy_response_survives_request_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dashboard_server, "MAX_ACTIVE_REQUESTS", 1)
+    with _running_dashboard() as (server, base_url):
+        assert server._request_slots.acquire(blocking=False)
+        try:
+            for _ in range(20):
+                status, _headers, body = _request(
+                    base_url,
+                    "/api/dashboard",
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                    body=b"x" * 16384,
+                )
+                assert status == 503
+                assert json.loads(body) == {"error": "dashboard_busy"}
+        finally:
+            server._request_slots.release()
+
+
 def test_notification_preview_read_failure_returns_unavailable_not_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
