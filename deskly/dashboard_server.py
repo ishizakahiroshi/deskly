@@ -22,6 +22,9 @@ from deskly.shared_auth import (
     CredentialStoreError,
     LocalCredentialStore,
     SharedSessions,
+    TrustedProxies,
+    parse_trusted_proxies,
+    resolve_client_address,
 )
 from deskly.workspace_access import WorkspaceAccess
 from deskly.workspace_model import WorkspaceError
@@ -76,6 +79,7 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         shared_home: Path | None = None,
         shared_workspace_id: str | None = None,
         shared_origin: str | None = None,
+        trusted_proxies: TrustedProxies = (),
     ) -> None:
         super().__init__(address, DashboardRequestHandler)
         self.password_bytes = password.encode("utf-8")
@@ -87,6 +91,8 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         self.shared_home = shared_home
         self.shared_workspace_id = shared_workspace_id
         self.shared_origin = shared_origin
+        # Only the shared Web behind a reverse proxy reads forwarding headers.
+        self.trusted_proxies = trusted_proxies if shared_accounts else ()
         self.shared_secret = secrets.token_bytes(32) if shared_accounts else None
         self.sessions: dict[str, float] = {}
         self.sessions_lock = RLock()
@@ -803,7 +809,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 except (ValueError, UnicodeDecodeError, OverflowError):
                     self._send_json(400, {"error": "invalid_login_request"})
                     return
-                throttle_key = f"{self.client_address[0]}:{login}"
+                client = resolve_client_address(
+                    self.client_address[0], self.headers.get_all("X-Real-IP", []),
+                    self.headers.get_all("X-Forwarded-For", []), self.server.trusted_proxies)
+                # Count per client address and login so that failures from one
+                # client cannot lock the same login out for other clients.
+                throttle_key = f"{client}|{login}"
                 if not self.server.shared_sessions.allowed_login(throttle_key):
                     self._send_json(429, {"error": "login_throttled"})
                     return
@@ -1042,11 +1053,14 @@ def create_shared_dashboard_server(
     public_origin: str,
     host: str = "0.0.0.0",
     port: int = DEFAULT_DASHBOARD_PORT,
+    trusted_proxies: str = "",
 ) -> DashboardHTTPServer:
     """Build the separate shared Web entrypoint behind an HTTPS reverse proxy.
 
     The caller must publish this port only to a private ingress network. This
     function never enables legacy dashboard/communication-ledger providers.
+    ``trusted_proxies`` lists proxy addresses/CIDRs whose ``X-Real-IP`` /
+    ``X-Forwarded-For`` are used for login throttling; empty disables them.
     """
     from deskly.workspace_model import uuid_text
 
@@ -1063,12 +1077,14 @@ def create_shared_dashboard_server(
             raise ValueError("invalid bind host")
         if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
             raise ValueError("invalid port")
+        proxies = parse_trusted_proxies(trusted_proxies)
         accounts = LocalCredentialStore(credential_store)
     except (ValueError, CredentialStoreError) as exc:
         raise DashboardConfigurationError("shared Web configuration is invalid") from exc
     return DashboardHTTPServer((host, port), "", None, None, None,
                                shared_accounts=accounts, shared_home=home,
-                               shared_workspace_id=workspace_id, shared_origin=public_origin)
+                               shared_workspace_id=workspace_id, shared_origin=public_origin,
+                               trusted_proxies=proxies)
 
 
 def serve_dashboard(

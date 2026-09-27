@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import os
 import re
 import secrets
@@ -147,6 +148,70 @@ class LocalCredentialStore:
         with self._connect() as db:
             rows = db.execute("SELECT subject FROM accounts WHERE active=1").fetchall()
         return tuple(str(row[0]) for row in rows)
+
+
+TrustedProxies = tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
+
+
+def parse_trusted_proxies(value: str) -> TrustedProxies:
+    """Parse comma/space separated proxy addresses or CIDRs; empty means none.
+
+    A catch-all network is refused because it would let any client choose the
+    address used for login throttling.
+    """
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for item in re.split(r"[,\s]+", value.strip()):
+        if not item:
+            continue
+        try:
+            network = ipaddress.ip_network(item, strict=False)
+        except ValueError as exc:
+            raise ValueError("invalid trusted proxy") from exc
+        if network.prefixlen == 0:
+            raise ValueError("trusted proxy network is too broad")
+        networks.append(network)
+    return tuple(networks)
+
+
+def _ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped
+    return address
+
+
+def _trusted(address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+             proxies: TrustedProxies) -> bool:
+    return any(address.version == network.version and address in network for network in proxies)
+
+
+def resolve_client_address(peer: str, real_ip: list[str], forwarded_for: list[str],
+                           proxies: TrustedProxies) -> str:
+    """Return the address used to count login failures.
+
+    Forwarding headers are read only when the TCP peer is a configured trusted
+    proxy. ``X-Real-IP`` is preferred because the proxy overwrites it; otherwise
+    the right-most ``X-Forwarded-For`` hop that is not itself a trusted proxy is
+    used. Anything malformed falls back to the TCP peer.
+    """
+    peer_address = _ip(peer)
+    if peer_address is None or not proxies or not _trusted(peer_address, proxies):
+        return peer
+    if len(real_ip) == 1:
+        address = _ip(real_ip[0])
+        if address is not None:
+            return str(address)
+    hops = [hop for header in forwarded_for for hop in header.split(",")]
+    for hop in reversed(hops):
+        address = _ip(hop)
+        if address is None:
+            break
+        if not _trusted(address, proxies):
+            return str(address)
+    return str(peer_address)
 
 
 class SharedSessions:

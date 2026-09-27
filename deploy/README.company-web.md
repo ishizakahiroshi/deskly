@@ -31,6 +31,18 @@ reverse proxy is ready. Replace the example origin and names with your own value
    password. Keep the volume private; it contains password hashes and project
    data. The Web process refuses an uninitialized or mismatched workspace.
 
+   Set `DESKLY_TRUSTED_PROXIES` to the subnet of the `deskly_ingress` network
+   (for example the output of
+   `docker network inspect deskly_ingress --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`).
+   Login failures are counted per client address and login name. Behind the
+   proxy every request arrives from the proxy address, so without this setting
+   anyone who knows a login name can keep that account locked out. With it, the
+   Web reads `X-Real-IP` (or the right-most untrusted `X-Forwarded-For` hop)
+   only from requests whose direct peer is in the listed networks. The proxy
+   must overwrite `X-Real-IP` with `$remote_addr`. Every container attached to
+   `deskly_ingress` is trusted for this purpose, so attach only the proxy and
+   the Web. A catch-all network such as `0.0.0.0/0` is refused.
+
 4. Put `compose.company-web.yaml` next to `compose.yaml`. The release installer
    includes the Web service on subsequent updates when both this overlay and
    `web.env.local` are present. Its readiness check requires an active owner.
