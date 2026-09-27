@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Deskly 個人案件</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="brand">DESKLY</span><h1>個人案件</h1></div>
+    <div class="top-actions"><span id="identity"></span><a class="button subtle" href="/api/export" download="deskly-personal-backup.json">控えを保存</a></div>
+  </header>
+  <main>
+    <p id="message" role="status" aria-live="polite"></p>
+    <div class="layout">
+      <section class="panel" aria-labelledby="projects-title">
+        <div class="section-head"><h2 id="projects-title">案件</h2><span id="project-count"></span></div>
+        <div id="projects" class="project-list"></div>
+        <details id="project-details">
+          <summary>案件を追加</summary>
+          <form id="project-form">
+            <label>案件名<input name="name" required maxlength="160"></label>
+            <label>目的<textarea name="purpose" maxlength="2000"></textarea></label>
+            <label>リポジトリ URL<input name="repository_url" type="url" placeholder="https://example.com/repo" maxlength="512"></label>
+            <label>区分<select name="scope"><option value="personal">個人</option><option value="hybrid">個人と会社で利用</option></select></label>
+            <button type="submit">追加</button>
+          </form>
+        </details>
+      </section>
+      <section class="panel" aria-labelledby="detail-title">
+        <div class="section-head"><h2 id="detail-title">案件を選択してください</h2><span id="detail-meta"></span></div>
+        <div id="detail" hidden>
+          <p id="purpose"></p>
+          <p id="repository"></p>
+          <details id="project-edit-details">
+            <summary>案件を編集</summary>
+            <form id="project-edit-form">
+              <label>案件名<input name="name" required maxlength="160"></label>
+              <label>目的<textarea name="purpose" maxlength="2000"></textarea></label>
+              <label>リポジトリ URL<input name="repository_url" type="url" maxlength="512"></label>
+              <label>区分<select name="scope"><option value="personal">個人</option><option value="hybrid">個人と会社で利用</option></select></label>
+              <button type="submit">変更を保存</button>
+            </form>
+          </details>
+          <h3>マイルストーン</h3>
+          <div id="milestones" class="item-list"></div>
+          <details id="milestone-details">
+            <summary>マイルストーンを追加</summary>
+            <form id="milestone-form">
+              <label>目標<input name="goal" required maxlength="240"></label>
+              <label>受入条件<textarea name="acceptance" maxlength="2000"></textarea></label>
+              <label>確認日<input name="check_date" type="date"></label>
+              <label>状態<select name="state"><option>未確認</option><option>進行中</option><option>待ち</option><option>完了</option><option>保留</option></select></label>
+              <button type="submit">追加</button>
+            </form>
+          </details>
+          <h3>次の行動</h3>
+          <div id="items" class="item-list"></div>
+          <details id="item-details">
+            <summary>行動を追加</summary>
+            <form id="item-form">
+              <label>題名<input name="title" required maxlength="240"></label>
+              <label>次にすること<textarea name="next_action" maxlength="2000"></textarea></label>
+              <label>確認日<input name="check_date" type="date"></label>
+              <label>マイルストーン<select name="milestone_id" id="item-milestone"><option value="">紐付けなし</option></select></label>
+              <label>状態<select name="state"><option>未確認</option><option>進行中</option><option>待ち</option><option>完了</option><option>保留</option></select></label>
+              <button type="submit">追加</button>
+            </form>
+          </details>
+        </div>
+      </section>
+    </div>
+    <details class="panel history"><summary>変更履歴</summary><div id="events"></div></details>
+  </main>
+</body>
+</html>
