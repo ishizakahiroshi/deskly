@@ -1,0 +1,35 @@
+# Optional shared dashboard on the company host. Use together with compose.yaml.
+# The contact API stays on the default network and is never attached to ingress.
+# Provision the external network and private web.env.local before starting this service.
+services:
+  web:
+    image: deskly-app:latest
+    command: ["python", "-m", "deskly.shared_server"]
+    restart: unless-stopped
+    mem_limit: 192m
+    cpus: "0.5"
+    expose:
+      - "8766"
+    env_file:
+      - path: web.env.local
+        required: true
+    volumes:
+      - web_data:/data
+    networks:
+      ingress:
+        aliases:
+          - deskly-web
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/healthz', timeout=2).close()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  web_data:
+
+networks:
+  ingress:
+    external: true
+    name: deskly_ingress

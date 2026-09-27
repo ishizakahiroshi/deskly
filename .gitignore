@@ -119,3 +119,6 @@ opencode.json*
 # === obsidian-link: managed ===
 /docs/obsidian/
 # === /obsidian-link: managed ===
+
+# Local video source and renders
+/brag-output/

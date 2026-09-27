@@ -28,7 +28,17 @@ PORT="${DESKLY_PORT:-8765}"
 
 log() { echo "[install-release] $*"; }
 
-compose() { docker compose -p deskly -f "$APP/compose.yaml" "$@"; }
+shared_web_enabled() {
+	[ -f "$APP/compose.company-web.yaml" ] && [ -f "$APP/web.env.local" ]
+}
+
+compose() {
+	if shared_web_enabled; then
+		docker compose -p deskly -f "$APP/compose.yaml" -f "$APP/compose.company-web.yaml" "$@"
+	else
+		docker compose -p deskly -f "$APP/compose.yaml" "$@"
+	fi
+}
 
 release_revision() {
 	sed -n 's/.*"revision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1/RELEASE"
@@ -64,7 +74,27 @@ wait_for() {
 	return 1
 }
 
-up() { compose up -d --build app; }
+wait_for_web() {
+	if ! shared_web_enabled; then
+		return 0
+	fi
+	i=0
+	while [ "$i" -lt 30 ]; do
+		if compose exec -T web python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/healthz', timeout=2).close()" >/dev/null 2>&1; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 2
+	done
+	return 1
+}
+
+up() {
+	compose up -d --build app
+	if shared_web_enabled; then
+		compose up -d --no-deps --force-recreate web
+	fi
+}
 
 # $1 のディレクトリを今の版にし、それまでの今の版を直前の版として残す
 swap_in() {
@@ -92,6 +122,9 @@ status)
 		log "直前の版: $(release_revision "$PREV")"
 	fi
 	log "healthz: $(fetch_healthz || echo '応答なし')"
+	if shared_web_enabled; then
+		if wait_for_web; then log "shared Web healthz: ok"; else log "shared Web healthz: 応答なし"; fi
+	fi
 	exit 0
 	;;
 rollback)
@@ -105,7 +138,7 @@ rollback)
 	mv "$PREV" "$INCOMING"
 	swap_in "$INCOMING"
 	up
-	if wait_for "$want"; then
+	if wait_for "$want" && wait_for_web; then
 		log "戻しました: healthz が $want を返しています"
 		exit 0
 	fi
@@ -146,7 +179,7 @@ log "新しい版 $want を反映します"
 swap_in "$INCOMING"
 up
 
-if wait_for "$want"; then
+if wait_for "$want" && wait_for_web; then
 	log "反映しました: healthz が $want を返しています"
 	exit 0
 fi
@@ -159,7 +192,7 @@ if [ -d "$PREV" ]; then
 	mv "$PREV" "$CUR"
 	up
 	back="$(release_revision "$CUR")"
-	if wait_for "$back"; then
+	if wait_for "$back" && wait_for_web; then
 		log "前の版 $back に戻しました（失敗した版は $FAILED に残しています）"
 	else
 		log "前の版 $back も healthz を返しません"
