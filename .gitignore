@@ -122,3 +122,6 @@ opencode.json*
 
 # Local video source and renders
 /brag-output/
+
+# === project-init 推奨の追記（2026-09-28・templates/gitignore から不足分のみ） ===
+docs/local/
