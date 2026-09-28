@@ -47,7 +47,11 @@ def test_preview_apply_replay_version_and_history(tmp_path: Path) -> None:
     assert service.apply(task_preview) == result
     assert service.detail(str(created["id"]))["work_items"][0]["id"] == result["id"]
     assert service.my_work()["items"][0]["project_name"] == "合成案件"
-    assert len(service.history(str(created["id"]))["events"]) == 2
+    events = service.history(str(created["id"]))["events"]
+    assert len(events) == 2
+    assert all(event["requester_member_id"] == member and
+               event["executor_kind"] == "unknown" and event["executor_ref"] is None and
+               event["executor_verified"] == 0 for event in events)
     changed = dict(task_preview)
     changed["after"] = {**task_preview["after"], "title": "不正な変更"}
     with pytest.raises(WorkspaceError, match="invalid_preview"):

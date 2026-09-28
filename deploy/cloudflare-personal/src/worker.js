@@ -145,7 +145,8 @@ async function api(request, env, actor, path) {
     const result = await env.DB.prepare(`UPDATE projects SET name=?,purpose=?,repository_url=?,scope=?,
       version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=?`)
       .bind(name, purpose, repository, body.scope, new Date().toISOString(), actor.subject, project[1], expected).run();
-    return result.meta.changes === 1 ? json({ id: project[1], version: expected + 1 }) : problem("version_conflict", 409);
+    // D1 counts the history trigger's insert too; a successful update changes more than one row.
+    return result.meta.changes > 0 ? json({ id: project[1], version: expected + 1 }) : problem("version_conflict", 409);
   }
   const milestones = path.match(/^\/api\/projects\/([0-9a-f-]{36})\/milestones$/i);
   if (request.method === "GET" && milestones) {
@@ -183,7 +184,7 @@ async function api(request, env, actor, path) {
     const result = await env.DB.prepare(`UPDATE milestones SET goal=?,acceptance=?,check_date=?,state=?,
       version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=?`)
       .bind(goal, acceptance, date, body.state, new Date().toISOString(), actor.subject, milestone[1], expected).run();
-    return result.meta.changes === 1 ? json({ id: milestone[1], version: expected + 1 }) : problem("version_conflict", 409);
+    return result.meta.changes > 0 ? json({ id: milestone[1], version: expected + 1 }) : problem("version_conflict", 409);
   }
   const items = path.match(/^\/api\/projects\/([0-9a-f-]{36})\/items$/i);
   if (request.method === "GET" && items) {
@@ -225,7 +226,7 @@ async function api(request, env, actor, path) {
     const result = await env.DB.prepare(`UPDATE work_items SET milestone_id=?,title=?,next_action=?,check_date=?,state=?,
       version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=?`)
       .bind(linkedMilestone, title, next, date, body.state, new Date().toISOString(), actor.subject, item[1], expected).run();
-    return result.meta.changes === 1 ? json({ id: item[1], version: expected + 1 }) : problem("version_conflict", 409);
+    return result.meta.changes > 0 ? json({ id: item[1], version: expected + 1 }) : problem("version_conflict", 409);
   }
   if (request.method === "GET" && path === "/api/events") {
     const rows = await env.DB.prepare(`SELECT id,entity_type,entity_id,operation,actor,at_utc,before_json,after_json

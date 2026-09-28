@@ -143,19 +143,32 @@ async function editItem(item) {
       milestone_id: item.milestone_id || "", expected_version: item.version }) });
     status("行動を保存しました。");
     await loadProjects();
+    await loadEvents();
   } catch (error) { status(error.message); }
 }
 async function loadEvents() {
   const result = await api("/api/events");
   const list = node("events");
   list.replaceChildren();
-  for (const event of result.events) list.append(element("p", `${event.at_utc} · ${event.entity_type} · ${event.operation} · ${event.entity_id}`));
+  for (const event of result.events) {
+    const entry = document.createElement("details");
+    const summary = element("summary", `${event.at_utc} · ${event.entity_type} · ${event.operation} · ${event.entity_id} · 実行者 ${event.actor}`);
+    const changes = document.createElement("pre");
+    let before = event.before_json;
+    let after = event.after_json;
+    try { before = before === null ? null : JSON.parse(before); } catch {}
+    try { after = JSON.parse(after); } catch {}
+    changes.textContent = JSON.stringify({ 変更前: before, 変更後: after }, null, 2);
+    entry.append(summary, changes);
+    list.append(entry);
+  }
 }
 node("project-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   try {
-    const created = await api("/api/projects", { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
-    event.currentTarget.reset();
+    const created = await api("/api/projects", { method: "POST", body: JSON.stringify(formData(form)) });
+    form.reset();
     node("project-details").open = false;
     status("案件を追加しました。");
     await loadProjects();
@@ -178,10 +191,11 @@ node("project-edit-form").addEventListener("submit", async (event) => {
 });
 node("item-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   if (!state.selected) return;
   try {
-    await api(`/api/projects/${state.selected}/items`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
-    event.currentTarget.reset();
+    await api(`/api/projects/${state.selected}/items`, { method: "POST", body: JSON.stringify(formData(form)) });
+    form.reset();
     node("item-details").open = false;
     status("行動を追加しました。");
     await loadProjects();
@@ -190,11 +204,12 @@ node("item-form").addEventListener("submit", async (event) => {
 });
 node("milestone-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   if (!state.selected) return;
   try {
     await api(`/api/projects/${state.selected}/milestones`, { method: "POST",
-      body: JSON.stringify(formData(event.currentTarget)) });
-    event.currentTarget.reset();
+      body: JSON.stringify(formData(form)) });
+    form.reset();
     node("milestone-details").open = false;
     status("マイルストーンを追加しました。");
     await loadProjects();

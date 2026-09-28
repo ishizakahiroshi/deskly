@@ -83,8 +83,13 @@ async function main() {
   const backup = JSON.parse(await readFile(input, "utf8"));
   if (backup.format !== "deskly-personal-d1-v2" || !string(backup.exported_at, 40)) fail("invalid_format");
   validateRows(backup);
-  const lines = ["-- Private restore for a NEW D1 database after migrations 0001 and 0002.",
-    "-- Do not import into an existing database. Triggers rebuild events, then original events replace them."];
+  const lines = ["-- Private restore for an EMPTY D1 database after migrations 0001 and 0002.",
+    "-- Each guard is a self-insert: it is a no-op on an empty table and fails on an existing row.",
+    "-- All guards run before any backup data is inserted or events are deleted."];
+  for (const table of ["projects", "milestones", "work_items", "events"]) {
+    lines.push(`INSERT INTO ${table} (${columns[table].join(",")}) ` +
+      `SELECT ${columns[table].join(",")} FROM ${table} LIMIT 1;`);
+  }
   for (const table of ["projects", "milestones", "work_items"]) {
     for (const row of backup[table]) lines.push(`INSERT INTO ${table} (${columns[table].join(",")}) VALUES (${columns[table].map((key) => sql(row[key])).join(",")});`);
   }

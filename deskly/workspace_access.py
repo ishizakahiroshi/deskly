@@ -32,10 +32,14 @@ def _identity(issuer: object, subject: object) -> tuple[str, str]:
 
 
 class WorkspaceAccess:
-    def __init__(self, store: WorkspaceStore, workspace_id: str, principal: Principal):
+    def __init__(self, store: WorkspaceStore, workspace_id: str, principal: Principal,
+                 *, execution_route: str = "workspace-access"):
+        if execution_route not in {"workspace-access", "dashboard", "shared-admin-cli"}:
+            raise WorkspaceError("invalid_route")
         self.store = store
         self.workspace_id = uuid_text(workspace_id)
         self.principal = principal
+        self.execution_route = execution_route
 
     def _owner(self, db: sqlite3.Connection) -> None:
         version = db.execute("SELECT schema_version FROM metadata WHERE workspace_id=?",
@@ -61,9 +65,12 @@ class WorkspaceAccess:
     def _event(self, db: sqlite3.Connection, operation_id: str, target_type: str,
                target_id: str, reason: str, before: object, after: object,
                request_hash: str) -> None:
-        db.execute("""INSERT INTO access_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        db.execute("""INSERT INTO access_events (operation_id,workspace_id,actor_member_id,target_type,
+            target_id,requester_member_id,route,executor_kind,executor_ref,executor_verified,reason,
+            at_utc,before_json,after_json,request_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                    (operation_id, self.workspace_id, self.principal.member_id,
-                    target_type, target_id, "workspace-access", reason, utc_now(),
+                    target_type, target_id, self.principal.member_id, self.execution_route,
+                    "unknown", None, 0, reason, utc_now(),
                    _json(before) if before is not None else None, _json(after), request_hash))
 
     def members_and_grants(self) -> dict[str, Any]:
@@ -79,6 +86,27 @@ class WorkspaceAccess:
                 FROM project_memberships WHERE workspace_id=? ORDER BY project_id,member_id""",
                                                 (self.workspace_id,))]
             return {"members": members, "grants": grants}
+
+    def source_members_and_grants(self) -> dict[str, Any]:
+        """Owner-only source permission editor view without identities or credentials."""
+        with self.store.connect() as db:
+            self._owner(db)
+            sources = []
+            for row in db.execute("""SELECT * FROM entities WHERE workspace_id=?
+                AND type='source' AND archived=0 ORDER BY id""", (self.workspace_id,)):
+                source = self.store.entity(row)
+                sources.append({key: source[key] for key in
+                                ("id", "label", "adapter", "binding", "version")})
+            members = [{"member_id": row["id"], "name": row["name"],
+                        "role": row["role"], "active": bool(row["active"])}
+                       for row in db.execute("""SELECT id,name,role,active FROM members
+                           WHERE workspace_id=? ORDER BY name,id""", (self.workspace_id,))]
+            grants = [{"source_id": row["source_id"], "member_id": row["member_id"],
+                       "allowed": bool(row["allowed"]), "version": row["version"]}
+                      for row in db.execute("""SELECT source_id,member_id,allowed,version
+                          FROM source_memberships WHERE workspace_id=? ORDER BY source_id,member_id""",
+                                            (self.workspace_id,))]
+            return {"sources": sources, "members": members, "grants": grants}
 
     def bind_owner_identity(self, issuer: str, subject: str, *, operation_id: str,
                             reason: str) -> dict[str, Any]:
@@ -282,9 +310,12 @@ class WorkspaceAccess:
                           "project_id": row["project_id"], "type": row["type"],
                           "version": row["version"], "archived": False, **before_data}
                 after = {**before, **after_data, "version": version}
-                db.execute("INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                db.execute("""INSERT INTO events (operation_id,workspace_id,entity_id,member_id,route,
+                    requester_member_id,executor_kind,executor_ref,executor_verified,reason,at_utc,
+                    before_json,after_json,request_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                            (str(uuid4()), self.workspace_id, row["id"],
-                            self.principal.member_id, "workspace-access/takeover", reason,
+                            self.principal.member_id, "workspace-access/takeover",
+                            self.principal.member_id, "unknown", None, 0, reason,
                             utc_now(), _json(before), _json(after), request_hash))
                 transferred += 1
             db.execute("UPDATE members SET active=0 WHERE id=? AND workspace_id=?",
@@ -294,12 +325,39 @@ class WorkspaceAccess:
                         dict(member), result, request_hash)
             return result
 
+    def record_credential_revocation(self, member_id: str, *, operation_id: str,
+                                     reason: str) -> dict[str, Any]:
+        """Record confirmed credential revocation after checking the credential store."""
+        member_id = uuid_text(member_id)
+        operation_id = uuid_text(operation_id)
+        reason = bounded_text(reason, required=True, limit=240)
+        payload = {"kind": "credential_revocation_confirmed", "member_id": member_id,
+                   "reason": reason}
+        with self.store.connect(write=True) as db:
+            self._owner(db)
+            request_hash, prior = self._replay(db, operation_id, payload)
+            if prior is not None:
+                return prior
+            member = db.execute("SELECT id,active FROM members WHERE id=? AND workspace_id=?",
+                                (member_id, self.workspace_id)).fetchone()
+            if member is None or member["active"]:
+                raise WorkspaceError("version_conflict", 409)
+            if db.execute("""SELECT 1 FROM identities WHERE workspace_id=? AND member_id=?
+                LIMIT 1""", (self.workspace_id, member_id)).fetchone() is None:
+                raise WorkspaceError("invalid_member", 403)
+            result = {"member_id": member_id, "credential_revoked": True}
+            self._event(db, operation_id, "member_credentials", member_id, reason,
+                        {"credential_state": "checked"},
+                        {"credential_state": "inactive"}, request_hash)
+            return result
+
     def history(self) -> list[dict[str, Any]]:
         with self.store.connect() as db:
             self._owner(db)
             events: list[dict[str, Any]] = []
-            for row in db.execute("""SELECT operation_id,actor_member_id,target_type,
-                target_id,route,reason,at_utc,before_json,after_json
+            for row in db.execute("""SELECT operation_id,actor_member_id,requester_member_id,
+                target_type,target_id,route,executor_kind,executor_ref,executor_verified,
+                reason,at_utc,before_json,after_json
                 FROM access_events WHERE workspace_id=? ORDER BY at_utc,operation_id""",
                                   (self.workspace_id,)):
                 event = dict(row)

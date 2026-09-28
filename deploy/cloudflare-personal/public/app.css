@@ -20,6 +20,7 @@ h3 { margin-top: 1.5rem; font-size: 1rem; }
 .muted, #detail-meta, #project-count { color: #5e7770; font-size: .85rem; }
 .item-head { display: flex; justify-content: space-between; gap: .8rem; }
 .item p { white-space: pre-wrap; margin: .35rem 0; }
+.item > .muted { display: block; }
 .item button { margin-top: .4rem; }
 details { margin-top: 1rem; }
 summary { cursor: pointer; font-weight: 600; }
@@ -32,4 +33,5 @@ button:hover, .button:hover { background: #0e543f; }
 .button.subtle { background: #edf7ee; color: #123d38; }
 .history { margin-top: 1rem; }
 .history p { border-top: 1px solid #e4ede6; padding-top: .6rem; font-size: .85rem; }
+.history pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f7f4; border-radius: 7px; padding: .7rem; }
 @media (max-width: 750px) { .layout { grid-template-columns: 1fr; } .topbar { align-items: flex-start; } }

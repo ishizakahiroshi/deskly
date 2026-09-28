@@ -41,11 +41,13 @@ class DesklyHTTPServer(ThreadingHTTPServer):
         address: tuple[str, int],
         ledger_path: Path,
         token: str,
+        contact_read_token: str | None,
         revision: str,
     ) -> None:
         super().__init__(address, DesklyRequestHandler)
         self.ledger_path = ledger_path
         self.auth_token = token
+        self.contact_read_token = contact_read_token
         self.revision = revision
 
 
@@ -65,13 +67,53 @@ class DesklyRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _discard_rejected_body(self) -> None:
+        if self.command not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if (len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit()
+            or len(lengths[0]) > len(str(MAX_REQUEST_BYTES))):
+            self.close_connection = True
+            return
+        length = int(lengths[0])
+        if length > MAX_REQUEST_BYTES:
+            self.close_connection = True
+            return
+        previous_timeout = self.connection.gettimeout()
+        try:
+            self.connection.settimeout(1.0)
+            discarded = self.rfile.read(length)
+            if len(discarded) != length:
+                self.close_connection = True
+        except (OSError, TimeoutError):
+            self.close_connection = True
+        finally:
+            self.connection.settimeout(previous_timeout)
+
     def _authorized(self) -> bool:
         header = self.headers.get("Authorization", "")
         scheme, separator, supplied = header.partition(" ")
         if scheme.casefold() != "bearer" or not separator:
+            self._discard_rejected_body()
             self._send_json(401, {"code": "unauthorized", "error": "Bearer token が必要です"})
             return False
         if not hmac.compare_digest(supplied, self.server.auth_token):
+            self._discard_rejected_body()
+            self._send_json(401, {"code": "unauthorized", "error": "認証に失敗しました"})
+            return False
+        return True
+
+    def _contact_read_authorized(self) -> bool:
+        supplied_values = self.headers.get_all("Authorization", [])
+        if self.server.contact_read_token is None:
+            self._send_json(404, {"code": "not_found", "error": "API path が見つかりません"})
+            return False
+        if len(supplied_values) != 1:
+            self._send_json(401, {"code": "unauthorized", "error": "Bearer token が必要です"})
+            return False
+        scheme, separator, supplied = supplied_values[0].partition(" ")
+        if (scheme.casefold() != "bearer" or not separator
+            or not hmac.compare_digest(supplied, self.server.contact_read_token)):
             self._send_json(401, {"code": "unauthorized", "error": "認証に失敗しました"})
             return False
         return True
@@ -152,9 +194,47 @@ class DesklyRequestHandler(BaseHTTPRequestHandler):
                 },
             )
             return
+        internal_parts = parsed.path.strip("/").split("/")
+        if len(internal_parts) == 3 and internal_parts[:2] == ["internal", "contacts"]:
+            if parsed.query or parsed.fragment:
+                self._send_json(404, {"code": "not_found", "error": "API path が見つかりません"})
+                return
+            if not self._contact_read_authorized():
+                return
+            try:
+                contact_id = self._contact_id(internal_parts[2])
+            except ValueError:
+                self._send_json(404, {"code": "not_found", "error": "連絡が見つかりません"})
+                return
+            self._execute(lambda: self._get_internal_contact(contact_id))
+            return
         if not self._authorized():
             return
         self._execute(lambda: self._get(parsed.path, parse_qs(parsed.query, keep_blank_values=True)))
+
+    def _get_internal_contact(self, contact_id: str) -> tuple[int, object]:
+        with self._store() as store:
+            contact = store.get(contact_id)
+        return 200, {
+            "id": contact.id,
+            "project": contact.project,
+            "recipient": contact.recipient,
+            "channel": contact.channel,
+            "sent_at": contact.sent_at,
+            "state": contact.state,
+            "due": contact.due,
+            "updated_at": contact.updated_at,
+            "promise": contact.promise,
+            "agreement": contact.agreement,
+            # Private capability metadata: shared Web uses it only to suppress
+            # marked contacts. Its public projection never includes this field.
+            "sensitive": contact.sensitive,
+            "basis": contact.basis,
+            "note": contact.note,
+            "references": contact.references,
+            "shared_url": contact.shared_url,
+            "body": contact.body,
+        }
 
     def _get(self, path: str, query: Mapping[str, list[str]]) -> tuple[int, object]:
         if path == "/contacts":
@@ -291,6 +371,7 @@ def resolve_revision() -> str:
 def create_http_server(
     ledger_path: str | Path,
     token: str,
+    contact_read_token: str | None = None,
     *,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
@@ -299,6 +380,8 @@ def create_http_server(
     """test や埋め込み用に server を作る。token が無い場合は起動しない。"""
     if not token:
         raise ValueError("API token が未設定のため起動できません")
+    if contact_read_token is not None and hmac.compare_digest(token, contact_read_token):
+        raise ValueError("contact read token must be separate from the API token")
     if not host:
         raise ValueError("host が空です")
     path = Path(ledger_path)
@@ -309,6 +392,7 @@ def create_http_server(
         (host, port),
         path,
         token,
+        contact_read_token,
         revision if revision is not None else resolve_revision(),
     )
 
@@ -316,6 +400,7 @@ def create_http_server(
 def serve_api(
     ledger_path: str | Path,
     token: str,
+    contact_read_token: str | None = None,
     *,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
@@ -325,6 +410,7 @@ def serve_api(
     server = create_http_server(
         ledger_path,
         token,
+        contact_read_token,
         host=host,
         port=port,
         revision=revision,

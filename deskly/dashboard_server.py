@@ -16,6 +16,7 @@ from pathlib import Path
 from threading import BoundedSemaphore, RLock
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import NAMESPACE_URL, uuid5
 
 from deskly.shared_auth import (
     SHARED_SESSION_COOKIE_NAME,
@@ -279,6 +280,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         *,
         extra_headers: tuple[tuple[str, str], ...] = (),
     ) -> None:
+        self._discard_rejected_body()
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self._send_bytes(
             status,
@@ -286,6 +288,29 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
             extra_headers=extra_headers,
         )
+
+    def _discard_rejected_body(self) -> None:
+        if self.command != "POST" or getattr(self, "_request_body_read", False):
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if (len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit()
+            or len(lengths[0]) > len(str(MAX_WORKSPACE_BODY_BYTES))):
+            self.close_connection = True
+            return
+        length = int(lengths[0])
+        if length > MAX_WORKSPACE_BODY_BYTES:
+            self.close_connection = True
+            return
+        previous_timeout = self.connection.gettimeout()
+        try:
+            self.connection.settimeout(1.0)
+            discarded = self.rfile.read(length)
+            if len(discarded) != length:
+                self.close_connection = True
+        except (OSError, TimeoutError):
+            self.close_connection = True
+        finally:
+            self.connection.settimeout(previous_timeout)
 
     def _host_is_loopback(self) -> bool:
         host_values = self.headers.get_all("Host", [])
@@ -428,7 +453,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
     def _shared_access(self, service: Any) -> WorkspaceAccess:
         if self.server.shared_sessions is None:
             raise WorkspaceError("not_found", 404)
-        access = WorkspaceAccess(service.store, service.workspace_id, service.principal())
+        access = WorkspaceAccess(service.store, service.workspace_id, service.principal(),
+                                 execution_route="dashboard")
         with service.store.connect() as db:
             access._owner(db)
         return access
@@ -467,7 +493,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     (service.workspace_id, principal.member_id))}
             fallback = ""
         if path.endswith("/projects"):
-            return {**result, "sources": [],
+            visible_sources = [{key: source[key] for key in ("id", "label", "adapter")
+                                if key in source} for source in result.get("sources", [])
+                               if not source.get("archived")]
+            return {**result, "sources": visible_sources,
                     "projects": [{**item, "permission": permissions.get(item["id"], fallback)}
                                  for item in result["projects"]
                                  if principal.role == "owner" or item["id"] in permissions],
@@ -516,6 +545,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return None, 413
         try:
             raw = self.rfile.read(length)
+            self._request_body_read = True
             if len(raw) != length:
                 return None, 400
 
@@ -550,6 +580,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             raise OverflowError("body_too_large")
         length = int(lengths[0])
         raw = self.rfile.read(length)
+        self._request_body_read = True
         if len(raw) != length:
             raise ValueError("length")
 
@@ -609,8 +640,39 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "workspace_not_found"})
             return True
         try:
+            if (self.server.shared_sessions is not None and len(parts) == 5
+                and parts[3:] == ["sources", "contact"]):
+                from deskly.shared_contacts import list_contact_sources
+
+                assert self.server.shared_home is not None
+                self._send_json(200, list_contact_sources(self.server.shared_home, service))
+                return True
+            if (self.server.shared_sessions is not None and len(parts) >= 6
+                and parts[3] == "projects" and parts[5] == "contacts"):
+                from urllib.parse import unquote
+
+                from deskly.shared_contacts import get_project_contact, list_project_contacts
+
+                assert self.server.shared_home is not None
+                if len(parts) == 6:
+                    result = list_project_contacts(self.server.shared_home, service, parts[4])
+                elif len(parts) == 7:
+                    result = get_project_contact(
+                        self.server.shared_home, service, parts[4], unquote(parts[6]),
+                    )
+                else:
+                    self._send_json(404, {"error": "not_found"})
+                    return True
+                self._send_json(200, result)
+                return True
             if len(parts) == 4 and parts[3] == "projects":
                 result = service.projects()
+            elif len(parts) == 4 and parts[3] == "counts":
+                result = service.counts()
+            elif len(parts) == 5 and parts[3] == "search":
+                from urllib.parse import unquote
+
+                result = service.search(unquote(parts[4]))
             elif len(parts) == 4 and parts[3] == "my-work":
                 result = service.my_work()
             elif len(parts) == 5 and parts[3] == "projects":
@@ -619,6 +681,24 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 result = service.history(parts[4])
             elif len(parts) == 5 and parts[3:] == ["access", "members"]:
                 result = self._shared_access(service).members_and_grants()
+                assert self.server.shared_accounts is not None
+                active_subjects = set(self.server.shared_accounts.active_subjects())
+                with service.store.connect() as db:
+                    for member in result["members"]:
+                        identity = db.execute("""SELECT subject FROM identities
+                            WHERE workspace_id=? AND member_id=? AND issuer=?""",
+                            (service.workspace_id, member["member_id"],
+                             self.server.shared_origin)).fetchone()
+                        has_revocation_event = db.execute("""SELECT 1 FROM access_events
+                            WHERE workspace_id=? AND target_type='member_credentials'
+                            AND target_id=? LIMIT 1""",
+                            (service.workspace_id, member["member_id"])).fetchone() is not None
+                        member["credential_revocation_pending"] = bool(
+                            not member["active"] and identity is not None and
+                            (identity["subject"] in active_subjects or not has_revocation_event)
+                        )
+            elif len(parts) == 5 and parts[3:] == ["access", "sources"]:
+                result = self._shared_access(service).source_members_and_grants()
             else:
                 self._send_json(404, {"error": "not_found"})
                 return True
@@ -784,6 +864,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self._serve_provider(provider, notification=notification)
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        self._request_body_read = False
         if not self._host_is_loopback():
             self._send_json(400, {"error": "invalid_host"})
             return
@@ -912,6 +993,46 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             parts = path.strip("/").split("/")
             if (self.server.shared_sessions is not None and service is not None
                 and len(parts) >= 5 and parts[2] == service.workspace_id
+                and ((len(parts) == 5 and parts[3:] == ["sources", "contact"])
+                     or (len(parts) == 7 and parts[3] == "projects"
+                         and parts[5:] == ["contacts", "link"]))):
+                from deskly.shared_contacts import link_project_contact, register_contact_source
+
+                try:
+                    payload = self._read_workspace_json()
+                    if not isinstance(payload, dict):
+                        raise WorkspaceError("invalid_request")
+                    assert self.server.shared_home is not None
+                    if parts[3:] == ["sources", "contact"]:
+                        if set(payload) != {"label", "binding", "operation_id", "reason"}:
+                            raise WorkspaceError("invalid_request")
+                        result = register_contact_source(
+                            self.server.shared_home, service, label=payload["label"],
+                            binding=payload["binding"], operation_id=payload["operation_id"],
+                            reason=payload["reason"],
+                        )
+                    else:
+                        if set(payload) != {"source_id", "contact_id", "label",
+                                            "operation_id", "reason"}:
+                            raise WorkspaceError("invalid_request")
+                        result = link_project_contact(
+                            self.server.shared_home, service, parts[4],
+                            source_id=payload["source_id"], contact_id=payload["contact_id"],
+                            label=payload["label"], operation_id=payload["operation_id"],
+                            reason=payload["reason"],
+                        )
+                    self._send_json(200, result)
+                except OverflowError:
+                    self._send_json(413, {"error": "body_too_large"})
+                except WorkspaceError as exc:
+                    self._send_json(exc.status, {"error": exc.code})
+                except (OSError, sqlite3.Error, CredentialStoreError):
+                    self._send_json(503, {"error": "workspace_unavailable"})
+                except (ValueError, UnicodeDecodeError):
+                    self._send_json(400, {"error": "invalid_request"})
+                return
+            if (self.server.shared_sessions is not None and service is not None
+                and len(parts) >= 5 and parts[2] == service.workspace_id
                 and parts[3] == "access"):
                 try:
                     access = self._shared_access(service)
@@ -926,26 +1047,59 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                             payload["project_id"], payload["member_id"], payload["role"],
                             expected_version=payload["expected_version"],
                             operation_id=payload["operation_id"], reason=payload["reason"])
+                    elif len(parts) == 5 and parts[4] == "source-grants":
+                        if set(payload) != {"source_id", "member_id", "allowed", "expected_version",
+                                            "operation_id", "reason"}:
+                            raise WorkspaceError("invalid_request")
+                        result = access.set_source_access(
+                            payload["source_id"], payload["member_id"], payload["allowed"],
+                            expected_version=payload["expected_version"],
+                            operation_id=payload["operation_id"], reason=payload["reason"])
                     elif len(parts) == 7 and parts[4] == "members" and parts[6] == "deactivate":
                         if set(payload) != {"expected_version", "operation_id", "reason"}:
                             raise WorkspaceError("invalid_request")
-                        if isinstance(payload["expected_version"], bool) or payload["expected_version"] != 1:
+                        expected_version = payload["expected_version"]
+                        if isinstance(expected_version, bool) or expected_version not in {1, 2}:
                             raise WorkspaceError("version_conflict", 409)
                         from deskly.workspace_model import uuid_text
 
                         member_id = uuid_text(parts[5])
                         with service.store.connect() as db:
-                            identity = db.execute("""SELECT subject FROM identities
-                                WHERE workspace_id=? AND member_id=? AND issuer=?""",
+                            identity = db.execute("""SELECT i.subject,m.active FROM identities i
+                                JOIN members m ON m.id=i.member_id AND m.workspace_id=i.workspace_id
+                                WHERE i.workspace_id=? AND i.member_id=? AND i.issuer=?""",
                                 (service.workspace_id, member_id, self.server.shared_origin)).fetchone()
                         if identity is None:
                             raise WorkspaceError("invalid_member", 403)
-                        result = access.deactivate_member(member_id,
-                            expected_version=payload["expected_version"],
-                            operation_id=payload["operation_id"], reason=payload["reason"])
+                        if identity["active"]:
+                            if expected_version != 1:
+                                raise WorkspaceError("version_conflict", 409)
+                            result = access.deactivate_member(member_id,
+                                expected_version=1, operation_id=payload["operation_id"],
+                                reason=payload["reason"])
+                        elif expected_version == 1:
+                            # A transport retry with the original operation ID may
+                            # replay the completed workspace step after the member
+                            # row has already been deactivated.
+                            result = access.deactivate_member(member_id,
+                                operation_id=payload["operation_id"], reason=payload["reason"])
+                        elif expected_version == 2:
+                            result = {"member_id": member_id, "active": False,
+                                      "credential_revocation_pending": True}
+                        else:
+                            raise WorkspaceError("version_conflict", 409)
                         assert self.server.shared_accounts is not None
-                        if identity["subject"] in self.server.shared_accounts.active_subjects():
+                        if identity["subject"] in set(self.server.shared_accounts.active_subjects()):
                             self.server.shared_accounts.deactivate(identity["subject"])
+                        credential_operation = str(uuid5(
+                            NAMESPACE_URL, f"deskly:credential-revocation:{uuid_text(payload['operation_id'])}"
+                        ))
+                        revocation = access.record_credential_revocation(
+                            member_id, operation_id=credential_operation,
+                            reason=payload["reason"],
+                        )
+                        result.update(revocation)
+                        result["credential_revocation_pending"] = False
                     else:
                         self._send_json(404, {"error": "not_found"})
                         return
@@ -954,10 +1108,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     self._send_json(413, {"error": "body_too_large"})
                 except WorkspaceError as exc:
                     self._send_json(exc.status, {"error": exc.code})
-                except (ValueError, UnicodeDecodeError):
-                    self._send_json(400, {"error": "invalid_request"})
                 except (OSError, sqlite3.Error, CredentialStoreError):
                     self._send_json(503, {"error": "workspace_unavailable"})
+                except (ValueError, UnicodeDecodeError):
+                    self._send_json(400, {"error": "invalid_request"})
                 return
             if service is None or len(parts) != 5 or parts[2] != service.workspace_id or (
                 (parts[3] != "commands" or parts[4] not in {"preview", "apply"})

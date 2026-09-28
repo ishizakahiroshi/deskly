@@ -2,6 +2,9 @@
 # The contact API stays on the default network and is never attached to ingress.
 # Provision the external network and private web.env.local before starting this service.
 services:
+  app:
+    environment:
+      DESKLY_CONTACT_READ_TOKEN: ${DESKLY_CONTACT_READ_TOKEN:?set the dedicated token in the project .env}
   web:
     image: deskly-app:latest
     command: ["python", "-m", "deskly.shared_server"]
@@ -13,9 +16,12 @@ services:
     env_file:
       - path: web.env.local
         required: true
+    environment:
+      DESKLY_CONTACT_READ_TOKEN: ${DESKLY_CONTACT_READ_TOKEN:?set the dedicated token in the project .env}
     volumes:
       - web_data:/data
     networks:
+      default: {}
       ingress:
         aliases:
           - deskly-web

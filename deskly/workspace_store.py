@@ -12,9 +12,9 @@ from uuid import uuid4
 
 from deskly.workspace_model import Principal, WorkspaceError, uuid_text
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
-ACCESS_SCHEMA = """
+ACCESS_SCHEMA_V2 = """
     CREATE TABLE identities (workspace_id TEXT NOT NULL, member_id TEXT NOT NULL UNIQUE,
         issuer TEXT NOT NULL, subject TEXT NOT NULL,
         PRIMARY KEY (workspace_id, issuer, subject),
@@ -37,6 +37,13 @@ ACCESS_SCHEMA = """
         before_json TEXT, after_json TEXT NOT NULL, request_hash TEXT NOT NULL,
         FOREIGN KEY (actor_member_id) REFERENCES members(id));
 """
+
+ACCESS_SCHEMA = ACCESS_SCHEMA_V2.replace(
+    "actor_member_id TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL,\n        route TEXT NOT NULL, reason TEXT NOT NULL, at_utc TEXT NOT NULL,",
+    "actor_member_id TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL,\n        requester_member_id TEXT NOT NULL, route TEXT NOT NULL, executor_kind TEXT NOT NULL, executor_ref TEXT, "
+    "executor_verified INTEGER NOT NULL CHECK (executor_verified IN (0, 1)), "
+    "reason TEXT NOT NULL, at_utc TEXT NOT NULL,",
+)
 
 
 def utc_now() -> str:
@@ -110,6 +117,8 @@ class WorkspaceStore:
                 CREATE INDEX entities_project ON entities (workspace_id, project_id, type);
                 CREATE TABLE events (operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
                     entity_id TEXT NOT NULL, member_id TEXT NOT NULL, route TEXT NOT NULL,
+                    requester_member_id TEXT NOT NULL, executor_kind TEXT NOT NULL, executor_ref TEXT,
+                    executor_verified INTEGER NOT NULL CHECK (executor_verified IN (0, 1)),
                     reason TEXT NOT NULL, at_utc TEXT NOT NULL, before_json TEXT,
                     after_json TEXT NOT NULL, request_hash TEXT NOT NULL);
             """)
@@ -128,7 +137,7 @@ class WorkspaceStore:
         return workspace_id, member_id
 
     def upgrade_access(self, workspace_id: str, backup_destination: Path) -> None:
-        """Explicitly upgrade a v1 workspace after a checked, exclusive backup."""
+        """Explicitly upgrade v1/v2 after a checked, exclusive versioned backup."""
         from deskly.workspace_backup import export_workspace
 
         uuid_text(workspace_id)
@@ -136,14 +145,36 @@ class WorkspaceStore:
             meta = db.execute("SELECT workspace_id, schema_version FROM metadata").fetchone()
             if meta is None or meta["workspace_id"] != workspace_id:
                 raise WorkspaceError("workspace_not_found", 404)
-            if meta["schema_version"] != 1:
+            if meta["schema_version"] not in {1, 2}:
                 raise WorkspaceError("invalid_schema_version", 409)
             manifest = export_workspace(self.path.parent.parent, workspace_id, backup_destination)
-            if manifest["schema_version"] != 1:
+            if manifest["schema_version"] != meta["schema_version"]:
                 raise WorkspaceError("invalid_backup")
-            for statement in ACCESS_SCHEMA.split(";"):
-                if statement.strip():
-                    db.execute(statement)
+            if meta["schema_version"] == 1:
+                for statement in ACCESS_SCHEMA_V2.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("UPDATE metadata SET schema_version=2")
+            for table, columns in {
+                "events": {
+                    "requester_member_id": "TEXT",
+                    "executor_kind": "TEXT NOT NULL DEFAULT 'unknown'",
+                    "executor_ref": "TEXT",
+                    "executor_verified": "INTEGER NOT NULL DEFAULT 0 CHECK (executor_verified IN (0, 1))",
+                },
+                "access_events": {
+                    "requester_member_id": "TEXT",
+                    "executor_kind": "TEXT NOT NULL DEFAULT 'unknown'",
+                    "executor_ref": "TEXT",
+                    "executor_verified": "INTEGER NOT NULL DEFAULT 0 CHECK (executor_verified IN (0, 1))",
+                },
+            }.items():
+                existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+                for column, definition in columns.items():
+                    if column not in existing:
+                        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            db.execute("UPDATE events SET requester_member_id=member_id")
+            db.execute("UPDATE access_events SET requester_member_id=actor_member_id")
             db.execute("UPDATE metadata SET schema_version=?", (SCHEMA_VERSION,))
 
     def principal(self, workspace_id: str) -> Principal:

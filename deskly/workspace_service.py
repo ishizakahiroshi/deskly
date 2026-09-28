@@ -49,12 +49,16 @@ def _canonical(value: object) -> str:
 
 class WorkspaceService:
     def __init__(self, home: Path, workspace_id: str, *, secret: bytes,
-                 identity: tuple[str, str] | None = None):
+                 identity: tuple[str, str] | None = None,
+                 execution_route: str = "dashboard"):
+        if execution_route not in {"dashboard", "shared-cli"}:
+            raise WorkspaceError("invalid_route")
         self.home = home
         self.workspace_id = uuid_text(workspace_id)
         self.store = WorkspaceStore(workspace_path(home, workspace_id))
         self.secret = secret
         self.identity = identity
+        self.execution_route = execution_route
 
     def principal(self) -> Principal:
         if self.identity is not None:
@@ -262,7 +266,8 @@ class WorkspaceService:
     def _token(self, request: dict[str, Any], before: dict[str, object] | None,
                after: dict[str, object], principal: Principal) -> str:
         payload = _canonical({"request": request, "before": before, "after": after,
-                              "member_id": principal.member_id})
+                              "member_id": principal.member_id,
+                              "execution_route": self.execution_route})
         return hmac.new(self.secret, payload.encode(), hashlib.sha256).hexdigest()
 
     def preview(self, request: object) -> dict[str, object]:
@@ -314,9 +319,13 @@ class WorkspaceService:
                                       after["id"], self.workspace_id, before["version"] if before else 0))
                 if changed.rowcount != 1:
                     raise WorkspaceError("version_conflict", 409)
-            db.execute("INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            db.execute("""INSERT INTO events (operation_id,workspace_id,entity_id,member_id,route,
+                requester_member_id,executor_kind,executor_ref,executor_verified,reason,at_utc,
+                before_json,after_json,request_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                        (normalized["operation_id"], self.workspace_id, after["id"],
-                        principal.member_id, "dashboard", normalized["reason"], utc_now(),
+                        principal.member_id, self.execution_route, principal.member_id,
+                        "unknown", None, 0,
+                        normalized["reason"], utc_now(),
                         _canonical(before) if before else None, _canonical(after), request_hash))
         return after
 
@@ -384,6 +393,54 @@ class WorkspaceService:
                 "external": {"status": "not_fetched" if linked else "not_connected",
                              "observations": [x for x in observations if x["reference_id"] in
                                               {ref["id"] for ref in linked}]}}
+
+    def counts(self) -> dict[str, int]:
+        """Count only the non-archived projects and records visible to this principal."""
+        projects = cast(list[dict[str, Any]], self.projects()["projects"])
+        work_items = milestones = unconfirmed = 0
+        for project in projects:
+            detail = cast(dict[str, Any], self.detail(str(project["id"])))
+            active_work = [item for item in detail["work_items"] if not item["archived"]]
+            work_items += len(active_work)
+            milestones += sum(not item["archived"] for item in detail["milestones"])
+            unconfirmed += sum(item.get("state") == "未確認" for item in active_work)
+        return {"projects": len(projects), "work_items": work_items,
+                "milestones": milestones, "unconfirmed_work_items": unconfirmed}
+
+    def search(self, query: object) -> dict[str, object]:
+        """Search visible projects and their visible first-party records."""
+        if not isinstance(query, str):
+            raise WorkspaceError("invalid_query")
+        query = " ".join(query.split())
+        if not query or len(query) > 100:
+            raise WorkspaceError("invalid_query")
+        needle = query.casefold()
+        projects = cast(list[dict[str, Any]], self.projects()["projects"])
+        results: list[dict[str, str]] = []
+        for project in projects:
+            project_id = str(project["id"])
+            project_name = str(project.get("name", ""))
+            if any(needle in str(project.get(field, "")).casefold()
+                   for field in ("name", "purpose", "state")):
+                results.append({"project_id": project_id, "project_name": project_name,
+                                "entity_id": project_id, "type": "project", "label": project_name})
+            detail = cast(dict[str, Any], self.detail(project_id))
+            for kind, key, fields in (
+                ("milestone", "milestones", ("goal", "state")),
+                ("work_item", "work_items", ("title", "next_action", "waiting_reason", "state")),
+                ("reference", "references", ("label", "kind")),
+            ):
+                for item in detail[key]:
+                    if item["archived"] or not any(
+                        needle in str(item.get(field, "")).casefold() for field in fields
+                    ):
+                        continue
+                    results.append({"project_id": project_id, "project_name": project_name,
+                                    "entity_id": str(item["id"]), "type": kind,
+                                    "label": str(item.get(fields[0], ""))})
+                    if len(results) == 100:
+                        return {"query": query, "truncated": True, "results": results}
+        return {"query": query, "truncated": False, "results": results}
 
     def my_work(self) -> dict[str, object]:
         principal = self.principal()
@@ -466,9 +523,12 @@ class WorkspaceService:
                     db.execute("INSERT INTO entities VALUES (?, ?, ?, 'observation', 1, ?, 0)",
                                (observation_id, self.workspace_id, project_id, _canonical(fields)))
                 operation_id = str(uuid4())
-                db.execute("INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                db.execute("""INSERT INTO events (operation_id,workspace_id,entity_id,member_id,route,
+                    requester_member_id,executor_kind,executor_ref,executor_verified,reason,at_utc,
+                    before_json,after_json,request_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                            (operation_id, self.workspace_id, observation_id,
-                            principal.member_id, "dashboard/source-fetch", "明示参照の取得結果",
+                            principal.member_id, "dashboard/source-fetch", principal.member_id,
+                            "unknown", None, 0, "明示参照の取得結果",
                             utc_now(), _canonical(before) if before else None,
                             _canonical(after), hashlib.sha256(_canonical(fields).encode()).hexdigest()))
         return {"project_id": project_id, "references": results}
@@ -488,7 +548,7 @@ class WorkspaceService:
                 ):
                     visible_ids.discard(ref["id"])
             rows = [dict(row) for row in db.execute(
-                "SELECT operation_id, entity_id, member_id, route, reason, at_utc, before_json, after_json FROM events WHERE workspace_id=? ORDER BY at_utc, operation_id",
+                "SELECT operation_id, entity_id, member_id, requester_member_id, route, executor_kind, executor_ref, executor_verified, reason, at_utc, before_json, after_json FROM events WHERE workspace_id=? ORDER BY at_utc, operation_id",
                 (self.workspace_id,)) if row["entity_id"] in visible_ids]
             if principal.role != "owner":
                 for observation in detail["external"]["observations"]:

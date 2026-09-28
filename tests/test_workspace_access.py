@@ -13,7 +13,7 @@ from deskly.workspace_access import WorkspaceAccess
 from deskly.workspace_backup import export_workspace, restore_workspace
 from deskly.workspace_model import WorkspaceError
 from deskly.workspace_service import WorkspaceService
-from deskly.workspace_store import WorkspaceStore, workspace_path
+from deskly.workspace_store import ACCESS_SCHEMA_V2, WorkspaceStore, workspace_path
 
 
 def change(kind: str, data: dict[str, object], *, project_id: str | None = None) -> dict[str, object]:
@@ -127,6 +127,14 @@ def test_v1_upgrade_requires_backup_and_keeps_personal_data(tmp_path: Path) -> N
     with store.connect(write=True) as db:
         for table in ("access_events", "source_memberships", "project_memberships", "identities"):
             db.execute(f"DROP TABLE {table}")
+        db.execute("ALTER TABLE events RENAME TO events_v3")
+        db.execute("""CREATE TABLE events (operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL, member_id TEXT NOT NULL, route TEXT NOT NULL,
+            reason TEXT NOT NULL, at_utc TEXT NOT NULL, before_json TEXT, after_json TEXT NOT NULL,
+            request_hash TEXT NOT NULL)""")
+        db.execute("""INSERT INTO events SELECT operation_id,workspace_id,entity_id,member_id,route,
+            reason,at_utc,before_json,after_json,request_hash FROM events_v3""")
+        db.execute("DROP TABLE events_v3")
         db.execute("UPDATE metadata SET schema_version=1")
     backup = tmp_path / "before-upgrade.jsonl"
     store.upgrade_access(wid, backup)
@@ -137,6 +145,37 @@ def test_v1_upgrade_requires_backup_and_keeps_personal_data(tmp_path: Path) -> N
     assert WorkspaceService(old_home, wid, secret=b"synthetic-shared-secret").projects()["projects"][0]["id"] == project["id"]
     with pytest.raises(WorkspaceError, match="invalid_schema_version"):
         store.upgrade_access(wid, tmp_path / "again.jsonl")
+
+
+def test_v2_upgrade_keeps_v2_backup_and_marks_legacy_executor_unknown(tmp_path: Path) -> None:
+    wid, owner_id = WorkspaceStore.initialize(tmp_path, "合成workspace", "UTC", "管理者")
+    service = WorkspaceService(tmp_path, wid, secret=b"synthetic-shared-secret")
+    project = created_project(service, owner_id, "既存の合成案件")
+    store = WorkspaceStore(workspace_path(tmp_path, wid))
+    with store.connect(write=True) as db:
+        for table in ("access_events", "source_memberships", "project_memberships", "identities"):
+            db.execute(f"DROP TABLE {table}")
+        db.executescript(ACCESS_SCHEMA_V2)
+        db.execute("ALTER TABLE events RENAME TO events_v3")
+        db.execute("""CREATE TABLE events (operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL, member_id TEXT NOT NULL, route TEXT NOT NULL,
+            reason TEXT NOT NULL, at_utc TEXT NOT NULL, before_json TEXT, after_json TEXT NOT NULL,
+            request_hash TEXT NOT NULL)""")
+        db.execute("""INSERT INTO events SELECT operation_id,workspace_id,entity_id,member_id,route,
+            reason,at_utc,before_json,after_json,request_hash FROM events_v3""")
+        db.execute("DROP TABLE events_v3")
+        db.execute("UPDATE metadata SET schema_version=2")
+    backup = tmp_path / "before-v3.jsonl"
+    store.upgrade_access(wid, backup)
+    assert export_workspace(tmp_path, wid, tmp_path / "after-v3.jsonl")["schema_version"] == 3
+    restored_home = tmp_path / "v2-restored"
+    assert restore_workspace(backup, restored_home)["schema_version"] == 2
+    with store.connect() as db:
+        event = db.execute("SELECT * FROM events WHERE entity_id=?", (project["id"],)).fetchone()
+        assert event["requester_member_id"] == owner_id
+        assert event["executor_kind"] == "unknown"
+        assert event["executor_ref"] is None
+        assert event["executor_verified"] == 0
 
 
 def test_source_scope_and_departure_takeover(tmp_path: Path) -> None:

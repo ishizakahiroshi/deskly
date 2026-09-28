@@ -10,17 +10,25 @@ from pathlib import Path
 
 from deskly import __version__
 from deskly.workspace_model import WorkspaceError, uuid_text
-from deskly.workspace_store import ACCESS_SCHEMA, SCHEMA_VERSION, WorkspaceStore, workspace_path
+from deskly.workspace_store import (
+    ACCESS_SCHEMA,
+    ACCESS_SCHEMA_V2,
+    WorkspaceStore,
+    workspace_path,
+)
 
 FORMAT = "deskly-workspace-v1"
 BASE_TABLES = ("metadata", "members", "entities", "events")
 ACCESS_TABLES = ("identities", "project_memberships", "source_memberships", "access_events")
-COLUMNS = {
+COLUMNS_V1 = {
     "metadata": {"schema_version", "workspace_id", "name", "timezone"},
     "members": {"id", "workspace_id", "name", "role", "active"},
     "entities": {"id", "workspace_id", "project_id", "type", "version", "data", "archived"},
     "events": {"operation_id", "workspace_id", "entity_id", "member_id", "route",
                "reason", "at_utc", "before_json", "after_json", "request_hash"},
+}
+COLUMNS_V2 = {
+    **COLUMNS_V1,
     "identities": {"workspace_id", "member_id", "issuer", "subject"},
     "project_memberships": {"workspace_id", "project_id", "member_id", "role", "version"},
     "source_memberships": {"workspace_id", "source_id", "member_id", "allowed", "version"},
@@ -28,12 +36,16 @@ COLUMNS = {
                       "target_id", "route", "reason", "at_utc", "before_json", "after_json",
                       "request_hash"},
 }
+COLUMNS_V3 = {**COLUMNS_V2,
+    "events": COLUMNS_V1["events"] | {"requester_member_id", "executor_kind", "executor_ref", "executor_verified"},
+    "access_events": COLUMNS_V2["access_events"] | {"requester_member_id", "executor_kind", "executor_ref", "executor_verified"},
+}
 
 
 def _tables(version: int) -> tuple[str, ...]:
     if version == 1:
         return BASE_TABLES
-    if version == SCHEMA_VERSION:
+    if version in {2, 3}:
         return BASE_TABLES + ACCESS_TABLES
     raise WorkspaceError("invalid_schema_version")
 
@@ -87,7 +99,8 @@ def restore_workspace(source: Path, home: Path) -> dict[str, object]:
         for line in data.splitlines():
             item = json.loads(line)
             table = item["table"]
-            if table not in rows or not isinstance(item["row"], dict) or set(item["row"]) != COLUMNS[table]:
+            columns_by_version = {1: COLUMNS_V1, 2: COLUMNS_V2, 3: COLUMNS_V3}[manifest["schema_version"]]
+            if table not in rows or not isinstance(item["row"], dict) or set(item["row"]) != columns_by_version[table]:
                 raise WorkspaceError("invalid_backup")
             rows[table].append(item["row"])
         if {table: len(rows[table]) for table in tables} != manifest["counts"]:
@@ -123,8 +136,16 @@ def restore_workspace(source: Path, home: Path) -> dict[str, object]:
                 reason TEXT NOT NULL, at_utc TEXT NOT NULL, before_json TEXT,
                 after_json TEXT NOT NULL, request_hash TEXT NOT NULL);
         """)
-        if manifest["schema_version"] == SCHEMA_VERSION:
-            db.executescript(ACCESS_SCHEMA)
+        version = manifest["schema_version"]
+        if version >= 2:
+            db.executescript(ACCESS_SCHEMA_V2 if version == 2 else ACCESS_SCHEMA)
+        if version == 3:
+            db.executescript("""
+                ALTER TABLE events ADD COLUMN requester_member_id TEXT;
+                ALTER TABLE events ADD COLUMN executor_kind TEXT NOT NULL DEFAULT 'unknown';
+                ALTER TABLE events ADD COLUMN executor_ref TEXT;
+                ALTER TABLE events ADD COLUMN executor_verified INTEGER NOT NULL DEFAULT 0;
+            """)
         for table in tables:
             for row in rows[table]:
                 columns = list(row)
@@ -152,7 +173,7 @@ def restore_workspace(source: Path, home: Path) -> dict[str, object]:
                            (workspace_id,)).fetchone()
         if owner is None:
             raise WorkspaceError("invalid_backup")
-        if manifest["schema_version"] == SCHEMA_VERSION:
+        if manifest["schema_version"] >= 2:
             for row in db.execute("SELECT workspace_id,member_id,issuer,subject FROM identities"):
                 if row[0] != workspace_id or not row[2] or not row[3]:
                     raise WorkspaceError("invalid_backup")

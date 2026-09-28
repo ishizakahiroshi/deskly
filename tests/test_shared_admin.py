@@ -8,8 +8,9 @@ from uuid import uuid4
 
 import pytest
 
-from deskly.shared_admin import AdminError, add_member, bootstrap, main
+from deskly.shared_admin import AdminError, add_member, bootstrap, main, recover_member
 from deskly.shared_auth import LocalCredentialStore
+from deskly.workspace_access import WorkspaceAccess
 from deskly.workspace_service import WorkspaceService
 from deskly.workspace_store import WorkspaceStore, workspace_path
 
@@ -80,6 +81,62 @@ def test_partial_bootstrap_preserves_files_and_refuses_duplicate(tmp_path: Path,
     assert len(list((home / "workspaces").glob("*.sqlite3"))) == 1
     with pytest.raises(AdminError, match="partial_state_requires_recovery"):
         setup(home)
+
+
+@pytest.mark.parametrize("failure_point", ["credential", "member", "grant"])
+def test_member_enrollment_recovery_resumes_exact_interrupted_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_point: str,
+) -> None:
+    home = tmp_path / "private-home"
+    result = setup(home)
+    service = WorkspaceService(home, result["workspace_id"], secret=b"synthetic")
+    project = service.apply(service.preview({
+        "operation_id": str(uuid4()), "action": "create", "type": "project",
+        "id": None, "project_id": None, "version": None,
+        "data": {"name": "Recovery project", "purpose": "synthetic",
+                 "owner_id": result["owner_member_id"], "state": "進行中"},
+        "reason": "synthetic",
+    }))
+    target = {"credential": LocalCredentialStore,
+              "member": WorkspaceAccess, "grant": WorkspaceAccess}[failure_point]
+    method_name = {"credential": "create_account", "member": "add_member",
+                   "grant": "set_project_role"}[failure_point]
+    original = getattr(target, method_name)
+
+    def fail_after(*args: object, **kwargs: object) -> object:
+        original(*args, **kwargs)
+        raise AdminError("synthetic_interruption")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(target, method_name, fail_after)
+        with pytest.raises(AdminError, match="synthetic_interruption"):
+            add_member(home=home, origin=ORIGIN, login="recover", name="Recover",
+                       project_id=project["id"], role="editor", password=MEMBER_PASSWORD)
+    journal = (home / "shared-admin.lock").read_text(encoding="utf-8")
+    assert MEMBER_PASSWORD not in journal
+    with pytest.raises(AdminError, match="service_must_be_stopped"):
+        recover_member(home=home, origin=ORIGIN, login="recover", name="Recover",
+                       project_id=project["id"], role="editor", password=MEMBER_PASSWORD,
+                       service_stopped=False)
+    with pytest.raises(AdminError, match="recovery_intent_mismatch"):
+        recover_member(home=home, origin=ORIGIN, login="recover", name="Recover",
+                       project_id=project["id"], role="viewer", password=MEMBER_PASSWORD,
+                       service_stopped=True)
+    recovered = recover_member(home=home, origin=ORIGIN, login="recover", name="Recover",
+                               project_id=project["id"], role="editor",
+                               password=MEMBER_PASSWORD, service_stopped=True)
+    assert recovered["status"] == "recovered"
+    assert not (home / "shared-admin.lock").exists()
+    assert LocalCredentialStore(home / "shared-credentials.sqlite3").authenticate(
+        "recover", MEMBER_PASSWORD)[0] == recovered["subject"]  # type: ignore[index]
+    with WorkspaceStore(workspace_path(home, result["workspace_id"])).connect() as db:
+        identity_count = db.execute("SELECT count(*) FROM identities WHERE subject=?",
+                                    (recovered["subject"],)).fetchone()[0]
+        grants = db.execute("""SELECT role FROM project_memberships
+            WHERE project_id=? AND member_id=?""",
+            (project["id"], recovered["member_id"])).fetchall()
+    assert identity_count == 1
+    assert [row[0] for row in grants] == ["editor"]
 
 
 def test_completed_files_with_stale_lock_require_recovery(tmp_path: Path) -> None:

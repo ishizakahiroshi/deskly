@@ -10,7 +10,7 @@ last_reviewed: 2026-09-27
 
 # チームダッシュボードへの拡張設計
 
-2026-09-27採用の設計。個人の初回運用とチーム共有の責務を定めた。C2の個人用workspaceは実装・commit済みで、個人運用を開始した。C3の共有Web（アカウント単位の認証・cookieセッション・案件権限）も実装・commit済みで、会社用ホストへ反映した。ただし2アカウント・2案件での受入、実際の利用者による操作、共有環境の復旧は未実施で、共有の開始条件はまだ満たしていない。実装と検証の境界は末尾に記す。現在の連絡機能と読み取り画面は維持して段階的に追加する。
+2026-09-27採用の設計。個人の初回運用とチーム共有の責務を定めた。C2の個人用workspaceは実装・commit済みで、個人運用を開始した。C3の共有Web基盤は作業ツリーに実装したが、現在の差分は未commitであり、会社用ホストへ含まれるかも確認していない。2アカウント・2案件での受入、実際の利用者による操作、共有環境の復旧も未実施で、共有の開始条件はまだ満たしていない。実装と検証の境界は末尾に記す。現在の連絡機能と読み取り画面は維持して段階的に追加する。
 
 ## 原本と案件の境界
 
@@ -90,9 +90,9 @@ C2の新設台帳は `DESKLY_HOME/workspaces/<workspace-id>.sqlite3`。既存の
 
 離脱時はactiveを外し、セッション/利用トークンを無効化する。履歴中のmember IDは削除せず、未完了の担当をownerが引き継ぐ。最後のactive ownerの削除は拒否する。C2では他memberの登録や招待を提供しない。
 
-連絡・外部参照の権限は案件所属だけで拡大しない。C2は本人が設定したsourceから、明示リンクした連絡の最小項目だけを読む。連絡本文の表示・更新は既存の個人向け連絡操作を使い、新3画面には持ち込まない。C3ではsource利用権限と案件権限の両方を満たす参照だけ返す。共有対象へ結ぶ行為はownerが確認し、参照先の権限が保証できなければ表示しない。
+連絡・外部参照の権限は案件所属だけで拡大しない。C2までは本人が設定したsourceから明示リンクした連絡の最小項目だけを読む。C3の限定機能では、ownerが明示的に登録・リンクした連絡について、source利用権限と案件権限の両方を満たす利用者へ、正本から詳細を読み取り専用で表示できる。本文をworkspace・履歴・控えへ複製せず、一般一覧へ混ぜない。連絡の`sensitive`欄に値がある記録は、一覧・詳細とも共有しない（存在や機微状態も漏らさない）。更新・送信は共有Webで提供しない。参照先の権限を保証できなければ表示しない。
 
-C3の対象には一覧・詳細・検索・件数・履歴・export・import・CLI・MCPを含む。現在の全台帳集約やBearerだけのAPIを共有用に直接公開しない。個人用入口は個人環境内に置き、共有データに到達する経路は同じ権限検査を通す。MCPの`apply=true`は適用意思であり、本人認証や案件権限の代わりにはならない。人の依頼者、実行経路（画面/CLI/MCP）、AI等の実行者を履歴上で分ける。
+C3の対象には一覧・詳細・検索・件数・履歴・export・import・CLI・MCPを含む。現在の全台帳集約やBearerだけのAPIを共有用に直接公開しない。個人用入口は個人環境内に置き、共有データに到達する経路は同じ権限検査を通す。MCPの`apply=true`は適用意思であり、本人認証や案件権限の代わりにはならない。人の依頼者、実行経路（画面/CLI/MCP）、AI等の実行者を履歴上で分ける。schema v3ではrequesterとexecutorを別列に記録し、既存行と現行Web/CLIのexecutorは根拠がないため`unknown`・未検証とする。MCPは信頼できるidentity transportがないためfail-closedのままとする。
 
 ## 最小の3画面
 
@@ -129,13 +129,13 @@ C2ではworkspace全体（ID、membership、source参照、全管理項目、ver
 | `case_service.py: get_case_result`、`issuepost.py: IssuepostClient`、`worklog.py: get_worklog_result` | GETによる外部案件、設定済みCLIによる工数読取 | optional接続のまま保持。新workspaceの原本にしない |
 | `static/index.html / app.js / app.css`、`pyproject.toml` | 既存3資産を配布。標準ライブラリ本体、UIはtextContentで描画 | 3画面を同じ資産に追加。依存追加・配布変更を前提にしない |
 
-既存のUIテストは旧画面の読取routeと連絡ID非表示を確認している。C2では別のworkspace画面スクリプトと合成データのサービス・HTTPテストを追加した。連絡本文・token・個人パスを新画面へ返さない契約は継続する。
+既存のUIテストは旧画面の読取routeと連絡ID非表示を確認している。C2では別のworkspace画面スクリプトと合成データのサービス・HTTPテストを追加した。旧画面、workspace共通projection、履歴、控えへ連絡本文・token・個人パスを返さない契約を継続する。C3のownerが明示リンクした非機微連絡の詳細表示だけが上記の限定例外となる。
 
 ## C2実装と検証の境界（2026-09-27）
 
 `deskly workspace init --name <表示名> --owner <表示名>` が `DESKLY_HOME/workspaces/<UUID>.sqlite3` と `DESKLY_HOME/workspace.json` を明示作成する。画面のGETは作成しない。既存の単一パスワードのloopback画面へ個人用の「全体」「案件詳細」「自分の仕事」を追加した。案件・マイルストーン・作業・資料参照・source登録をpreviewで確認し、applyで版を再検査して保存する。操作IDの再送は同じ結果を返し、変更とeventは同一トランザクションで記録する。アーカイブ解除もversionと履歴を伴う。
 
-sourceはworkspace内の安定IDで登録し、接続設定名をbindingとして保持する。連絡と外部案件の参照はsource IDと対象IDを明示して結ぶ。取得ボタンは設定済みの連絡台帳またはissuepostを実際に読み、参照した対象だけの最小項目を返す。連絡本文・token・接続パスは返さない。取得成否と試行・成功時刻はworkspace内の観測項目とeventへ記録し、元サービスの内容は複製しない。隔離ブラウザー受入では設定済み実連絡台帳を読み、許可されたsummary項目のみを表示した。issuepostは未設定で未確認。管理項目の再読込は未保存入力を確認し、読込失敗時は入力を保持する。
+sourceはworkspace内の安定IDで登録し、接続設定名をbindingとして保持する。連絡と外部案件の参照はsource IDと対象IDを明示して結ぶ。取得ボタンは設定済みの連絡台帳またはissuepostを実際に読み、参照した対象だけの最小項目を返す。連絡token・接続パスは返さない。C2の隔離ブラウザー受入では設定済み実連絡台帳を読み、許可されたsummary項目のみを表示した。C3の限定詳細ではownerが明示リンクし、案件・source両権限を持つ利用者だけが正本の詳細を読み取り表示できる。機微欄が空でない連絡は共有しない。本文はworkspaceの変更・履歴・控えへ複製しない。issuepostは未設定で未確認。管理項目の再読込は未保存入力を確認し、読込失敗時は入力を保持する。
 
 `deskly workspace backup --dest <新規ファイル>` は版・件数・ハッシュ付きの専用JSON Linesを出力する。`DESKLY_HOME`を空の別フォルダへ切り替えて `deskly workspace restore --source <控え>` を使う。同じworkspace IDの保存先が存在すれば拒否する。合成データの別保存先復旧ではID・親子関係・version・履歴の一致を確認した。既存の連絡台帳の控えではない。
 
@@ -147,12 +147,20 @@ C2の個人運用開始を確認した。42項目を元資料へ照合し、非�
 
 ## C3実装と検証の境界（2026-09-28）
 
-共有権限用のschema v2と`WorkspaceAccess`を追加した。既存のschema v1は`deskly workspace upgrade-access --backup <新規ファイル>`を明示実行した場合だけ、控えを作ってから更新する。2026-09-27時点で、個人の実workspaceにこの操作は実行していない。v1とv2の控えはそれぞれの版で空の別保存先へ復旧できる。
+共有権限用のschema v2と`WorkspaceAccess`を追加し、schema v3でイベントにrequesterとexecutorの種別・参照・検証状態を分けて記録する。v1/v2の旧イベントはrequesterを旧member欄から引き継ぎ、過去のexecutorは`unknown`・未検証のままとする。既存workspaceは`deskly workspace upgrade-access --backup <新規ファイル>`を明示実行した場合だけ、元のschema版の控えを作ってからschema v3へ更新する。現在の合成テストではv1・v2の旧schema fixtureからの更新前控え・復旧と、v3イベントの復旧を確認する。実workspaceへの更新と共有hostでの復旧は未実施。
 
 memberは認証基盤のissuerとsubjectの組で解決し、表示名・メール一致や台帳全体のBearerで本人を決めない。ownerがmemberを追加し、案件のeditor/viewerとsourceの利用許可を版付きで付与・取消する。案件一覧・詳細・自分の仕事・履歴・参照取得・preview/applyは共通サービス内で権限を再確認し、古い権限やversionの適用を拒否する。外部参照を共有案件へ結ぶ操作はownerに限る。参加者の無効化では未完了の担当をactive ownerへ移し、変更を履歴へ残す。
 
-共有Webは個人用画面とは別の入口（`python -m deskly.shared_server`）として実装した。認証は外部の認証製品ではなく、共有Web専用の資格情報DB（`deskly/shared_auth.py`）で行う。アカウントごとにscryptでハッシュしたパスフレーズを持ち、issuerは公開originの値、subjectはアカウントごとに生成したUUIDとする。ログインするとSecure・HttpOnly・SameSite=Strictのcookieセッションを発行し、パスフレーズ変更とアカウント無効化で既存セッションは次の要求から無効になる。ログイン失敗は接続元とログイン名の組ごとに回数を制限する。更新要求はHost・Origin・Sec-Fetch-Siteを検査する。案件一覧・詳細・履歴は許可された案件だけを返し、viewerの更新は拒否する。ownerは画面から案件権限の付与・取消と参加者の無効化を行う。最初のownerと追加アカウントは運用者が`python -m deskly.shared_admin`（`bootstrap` / `add-member`）で対話的に作る。手順は`deploy/README.company-web.md`。
+共有Webは個人用画面とは別の入口（`python -m deskly.shared_server`）として実装した。認証は外部の認証製品ではなく、共有Web専用の資格情報DB（`deskly/shared_auth.py`）で行う。アカウントごとにscryptでハッシュしたパスフレーズを持ち、issuerは公開originの値、subjectはアカウントごとに生成したUUIDとする。ログインするとSecure・HttpOnly・SameSite=Strictのcookieセッションを発行し、パスフレーズ変更とアカウント無効化で既存セッションは次の要求から無効になる。ログイン失敗は接続元とログイン名の組ごとに回数を制限する。更新要求はHost・Origin・Sec-Fetch-Siteを検査する。案件一覧・詳細・履歴は許可された案件だけを返し、viewerの更新は拒否する。ownerは画面から案件権限とsource利用権限の付与・取消、参加者の無効化を行う。権限変更eventは認証済みmemberをactorとして保持し、実行経路をdashboardとして区別する。最初のownerと追加アカウントは運用者が`python -m deskly.shared_admin`（`bootstrap` / `add-member`）で対話的に作る。手順は`deploy/README.company-web.md`。
 
-共有Webで提供しないもの（実装が無いもの）: 連絡台帳・外部案件のsource登録と取得（共有Webでは参照種別をmdとHTTPSリンクに限り、外部情報は未接続として返す）、共有環境でのCLI/MCP（`deskly/shared_mode.py`が起動を拒否し、共有workspace用のCLI/MCP認証経路は無い）、それに伴う「操作を依頼した人とAI等の実行者」の共有経路での区別、旧Bearer APIと全台帳集約画面の共有への公開。
+member無効化とcredential失効は別SQLiteへの書き込みなので、同時コミットではない。workspace側を先に無効化し、credential書き込みに失敗した場合もmember認可は拒否される。owner画面は未完了のcredential失効を検出し、無効memberに対する再試行を提供する。credentialの失効確認後に別のaccess eventを記録する。合成HTTPテストで失効書き込みを1回失敗させ、pending表示、再試行、再ログイン拒否と確認履歴を検証した。実ホスト上のDB障害・復旧は未検証。
 
-反映と検証の状況: 共有Webを会社用ホストへ反映し、公開の`/healthz`が200を返すことを確認した。自動テストでは合成データで、アカウント別の本人確認、許可の無い案件の非表示、viewerの更新拒否、パスフレーズ変更と無効化によるセッション失効を確認している。一方、2アカウント・2案件での受入、実際の利用者による画面操作、共有環境の控えからの復旧は未実施。これらを満たすまで実案件のデータを共有Webへ入れない。
+中断した`add-member`は、非秘密の登録意図を残したlockを保持し、Webとwriterを停止したうえで`shared_admin recover-member`から同じ内容を対話的に再開する。資格情報・member・案件grantのどこまで反映したか照合し、異なる内容や矛盾する状態は拒否する。これは新規ローカル検証であり、会社環境での実行や停止手順の受入ではない。
+
+共有連絡のローカル実装として、ownerによるcompany接続元の登録・特定contact IDの案件リンク、案件とsourceの両許可を持つmemberへの正本詳細表示、制限連絡（`sensitive`に値がある記録）の非表示を追加した。詳細はworkspace・履歴・控えへ複製せず、更新・送信はできない。内部APIは別の専用単一連絡読取tokenを使い、ブラウザーへtokenを渡さない。`python -m deskly.shared_cli` はTTYで資格情報を検証したmemberの案件表示・preview/apply・ownerの正確なcontact IDリンクを行い、eventのmember IDと固定経路`shared-cli`を記録する。これは共有workspaceファイルへアクセスできるローカル端末向けであり、共有Web上からのCLIではない。
+
+共有Web/API/CLIの検索と件数集計は、認証済みmemberが閲覧できる案件と、その案件内で閲覧できる項目だけを対象にする。検索結果は100件を上限にし、権限外案件、source接続設定、連絡本文、機微連絡を検索対象へ含めない。共有データ全体のexport/importはmember向けCLIへ公開せず、writer停止を明示する運用者用`shared_admin backup/restore`で資格情報DBとworkspaceを一組として扱う。
+
+未実装または未接続: 外部IdPによる本人確認、共有MCP認証・実行、呼出元AI本人の検証と記録、共有画面からの新規アカウント発行、旧Bearer APIと全台帳集約画面の共有公開。現在の共有CLIはログインしたmember IDと`shared-cli`経路を記録するが、CLIを起動したAI呼出元を認証しない。共有Web/CLIのexecutorは呼出元を検証できないため`unknown`と記録する。既存`deskly` CLI/MCPの共有モード拒否は維持し、認証の無い入口へ権限ガードを迂回させない。
+
+反映と検証の状況: 過去に会社用ホストへ反映した共有Web基礎版の`/healthz` 200は、その時点の版の記録である。今回の連絡接続・source権限・共有CLI・検索/集計・復旧コマンドの差分は作業ツリーだけにあり、ホストの反映版に含まれるか確認していない。連絡画面は以前、ownerによるsource登録→既存contactの明示リンク→案件内の一覧と本文をEdgeの合成ローカル環境で操作確認し、360px幅の`scrollWidth`と`clientWidth`がともに360であることを確認した。今回追加した検索・集計画面はブラウザを利用できないセッションのため、API/CLI/静的UI契約だけを検証し、実画面は見ていない。実会社ホスト、実アカウント2名・実案件2件、実連絡、外部IdP、共有ホストの控え復元、他アプリとの同居は未確認。これらを確認するまで実案件データを追加しない。Gmail・Googleカレンダー連携と社内ポータル構想は後段であり、初回共有や今回の受入範囲に含めない。

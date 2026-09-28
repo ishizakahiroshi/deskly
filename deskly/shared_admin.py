@@ -26,6 +26,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from deskly.shared_auth import CredentialStoreError, LocalCredentialStore
+from deskly.shared_backup import SharedBackupError, create_shared_backup, restore_shared_backup
 from deskly.workspace_access import WorkspaceAccess
 from deskly.workspace_model import WorkspaceError, bounded_text, uuid_text
 from deskly.workspace_store import SCHEMA_VERSION, WorkspaceStore, workspace_path
@@ -81,8 +82,8 @@ def _read_account(path: Path, login: str) -> tuple[str, bool] | None:
     return (str(row[0]), bool(row[1])) if row else None
 
 
-def _read_ready(home: Path, origin: str) -> dict[str, Any] | None:
-    if (home / _LOCK_FILE).exists():
+def _read_ready(home: Path, origin: str, *, allow_lock: bool = False) -> dict[str, Any] | None:
+    if (home / _LOCK_FILE).exists() and not allow_lock:
         raise AdminError("partial_state_requires_recovery")
     pointer, credentials = home / _POINTER_FILE, home / _CREDENTIAL_FILE
     if not pointer.exists() and not credentials.exists():
@@ -150,11 +151,15 @@ def inspect_bootstrap(home: Path, origin: str, workspace_name: str,
             "origin": origin, "credential_store": str(ready["credential_store"])}
 
 
-def _lock(home: Path) -> Path:
+def _lock(home: Path, intent: dict[str, str] | None = None) -> Path:
     lock = home / _LOCK_FILE
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(intent or {"kind": "bootstrap"}, output, sort_keys=True)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
     except FileExistsError as exc:
         raise AdminError("partial_state_requires_recovery") from exc
     return lock
@@ -188,7 +193,8 @@ def bootstrap(*, home: Path, origin: str, workspace_name: str, owner_name: str,
     accounts = LocalCredentialStore.initialize(credentials)
     subject = accounts.create_account(owner_login, password)
     store = WorkspaceStore(workspace_path(home, workspace_id))
-    access = WorkspaceAccess(store, workspace_id, store.principal(workspace_id))
+    access = WorkspaceAccess(store, workspace_id, store.principal(workspace_id),
+                             execution_route="shared-admin-cli")
     access.bind_owner_identity(origin, subject, operation_id=str(uuid4()),
                                reason="shared Web bootstrap")
     _write_pointer(home / _POINTER_FILE, workspace_id)
@@ -232,10 +238,13 @@ def add_member(*, home: Path, origin: str, login: str, name: str,
             pass
         raise AdminError("partial_state_requires_recovery")
     LocalCredentialStore._validate_password(password)
-    lock = _lock(home)
+    intent = {"kind": "add-member", "origin": origin, "login": login,
+              "name": name, "project_id": project_id, "role": role}
+    lock = _lock(home, intent)
     accounts = LocalCredentialStore(ready["credential_store"])
     subject = accounts.create_account(login, password)
-    access = WorkspaceAccess(store, ready["workspace_id"], store.principal(ready["workspace_id"]))
+    access = WorkspaceAccess(store, ready["workspace_id"], store.principal(ready["workspace_id"]),
+                             execution_route="shared-admin-cli")
     member = access.add_member(name, origin, subject, operation_id=str(uuid4()),
                                reason="shared Web member enrollment")
     access.set_project_role(project_id, member["member_id"], role, expected_version=0,
@@ -244,6 +253,82 @@ def add_member(*, home: Path, origin: str, login: str, name: str,
     return {"status": "created", "workspace_id": ready["workspace_id"],
             "member_id": member["member_id"], "subject": subject,
             "project_id": project_id, "role": role}
+
+
+def recover_member(*, home: Path, origin: str, login: str, name: str,
+                   project_id: str, role: str, password: str,
+                   service_stopped: bool) -> dict[str, str]:
+    """Resume only the exact interrupted member enrollment recorded in the lock."""
+    home = _home(home)
+    origin = _origin(origin)
+    login = LocalCredentialStore._validate_login(login)
+    name = bounded_text(name, required=True, limit=120)
+    project_id = uuid_text(project_id)
+    if role not in {"viewer", "editor"}:
+        raise AdminError("invalid_role")
+    LocalCredentialStore._validate_password(password)
+    if not service_stopped:
+        raise AdminError("service_must_be_stopped")
+    lock = home / _LOCK_FILE
+    intent = {"kind": "add-member", "origin": origin, "login": login,
+              "name": name, "project_id": project_id, "role": role}
+    was_locked = lock.exists()
+    if was_locked:
+        try:
+            journal = json.loads(lock.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise AdminError("recovery_journal_invalid") from exc
+        if journal != intent:
+            raise AdminError("recovery_intent_mismatch")
+    ready = _read_ready(home, origin, allow_lock=was_locked)
+    if ready is None:
+        raise AdminError("bootstrap_required_or_partial")
+    store: WorkspaceStore = ready["store"]
+    with store.connect() as db:
+        project = store.read_entity(db, project_id, ready["workspace_id"])
+        if project["type"] != "project" or project["archived"]:
+            raise AdminError("invalid_project")
+    accounts = LocalCredentialStore(ready["credential_store"])
+    account = _read_account(ready["credential_store"], login)
+    if account is None:
+        subject = accounts.create_account(login, password)
+    else:
+        authenticated = accounts.authenticate(login, password)
+        if authenticated is None or authenticated[0] != account[0] or not account[1]:
+            raise AdminError("credential_mismatch")
+        subject = account[0]
+    access = WorkspaceAccess(store, ready["workspace_id"],
+                             store.principal(ready["workspace_id"]),
+                             execution_route="shared-admin-cli")
+    with store.connect() as db:
+        identity = db.execute("""SELECT m.id,m.name,m.active FROM identities i
+            JOIN members m ON m.id=i.member_id AND m.workspace_id=i.workspace_id
+            WHERE i.workspace_id=? AND i.issuer=? AND i.subject=?""",
+            (ready["workspace_id"], origin, subject)).fetchone()
+        grant = (db.execute("""SELECT role FROM project_memberships
+            WHERE workspace_id=? AND project_id=? AND member_id=?""",
+            (ready["workspace_id"], project_id, identity["id"])).fetchone()
+            if identity else None)
+    if identity is None:
+        member = access.add_member(name, origin, subject, operation_id=str(uuid4()),
+                                   reason="shared Web member enrollment recovery")
+        member_id = str(member["member_id"])
+        grant = None
+    else:
+        if not identity["active"] or identity["name"] != name:
+            raise AdminError("recovery_state_conflict")
+        member_id = str(identity["id"])
+    if grant is None:
+        access.set_project_role(project_id, member_id, role, expected_version=0,
+                                operation_id=str(uuid4()),
+                                reason="shared Web enrollment recovery")
+    elif grant["role"] != role:
+        raise AdminError("recovery_state_conflict")
+    if was_locked:
+        lock.unlink()
+    return {"status": "recovered" if was_locked else "already_ready",
+            "workspace_id": ready["workspace_id"], "member_id": member_id,
+            "subject": subject, "project_id": project_id, "role": role}
 
 
 def _password(reader: Callable[[str], str]) -> str:
@@ -279,6 +364,25 @@ def main(argv: list[str] | None = None, *,
     member.add_argument("--name", required=True)
     member.add_argument("--project-id", required=True)
     member.add_argument("--role", choices=("viewer", "editor"), required=True)
+    recover = commands.add_parser("recover-member", help="resume one exact interrupted enrollment")
+    recover.add_argument("--home", type=Path, required=True)
+    recover.add_argument("--origin", required=True)
+    recover.add_argument("--login", required=True)
+    recover.add_argument("--name", required=True)
+    recover.add_argument("--project-id", required=True)
+    recover.add_argument("--role", choices=("viewer", "editor"), required=True)
+    recover.add_argument("--service-stopped", action="store_true", required=True,
+                         help="assert that the Web and every other writer are stopped")
+    backup = commands.add_parser("backup", help="create a verified credential/workspace recovery pair")
+    backup.add_argument("--home", type=Path, required=True)
+    backup.add_argument("--destination", type=Path, required=True)
+    backup.add_argument("--service-stopped", action="store_true", required=True,
+                        help="assert that the Web and every other writer are stopped")
+    restore = commands.add_parser("restore", help="restore a verified pair into a new shared home")
+    restore.add_argument("--source", type=Path, required=True)
+    restore.add_argument("--home", type=Path, required=True)
+    restore.add_argument("--origin", required=True,
+                         help="require the exact HTTPS issuer origin recorded in the pair")
     args, unknown = parser.parse_known_args(argv)
     if unknown:
         print("unsupported_arguments", file=sys.stderr)
@@ -296,13 +400,25 @@ def main(argv: list[str] | None = None, *,
                                    workspace_name=args.workspace_name, owner_name=args.owner_name,
                                    owner_login=args.owner_login, timezone=args.timezone,
                                    password=_password(secret_reader))
-        else:
+        elif args.command == "add-member":
             if require_tty and not sys.stdin.isatty():
                 raise AdminError("interactive_terminal_required")
             result = add_member(home=args.home, origin=args.origin, login=args.login,
                                 name=args.name, project_id=args.project_id, role=args.role,
                                 password=_password(secret_reader))
-    except (AdminError, WorkspaceError, CredentialStoreError) as exc:
+        elif args.command == "recover-member":
+            if require_tty and not sys.stdin.isatty():
+                raise AdminError("interactive_terminal_required")
+            result = recover_member(home=args.home, origin=args.origin, login=args.login,
+                                    name=args.name, project_id=args.project_id, role=args.role,
+                                    password=_password(secret_reader),
+                                    service_stopped=args.service_stopped)
+        elif args.command == "backup":
+            result = create_shared_backup(args.home, args.destination,
+                                          service_stopped=args.service_stopped)
+        else:
+            result = restore_shared_backup(args.source, args.home, expected_origin=args.origin)
+    except (AdminError, WorkspaceError, CredentialStoreError, SharedBackupError) as exc:
         print(f"shared_admin_error:{type(exc).__name__}:{str(exc)}", file=sys.stderr)
         return 1
     except (OSError, sqlite3.Error):

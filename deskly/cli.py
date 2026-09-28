@@ -491,7 +491,9 @@ def _serve_api_command(args: argparse.Namespace) -> int:
         ledgers = load_ledgers()
         definition = ledgers.definition(args.ledger)
         ledger_path = ledgers.config.local_ledger_path(definition.name)
-        serve_api(ledger_path, token, host=args.host, port=args.port)
+        contact_read_token = os.environ.get("DESKLY_CONTACT_READ_TOKEN", "") or None
+        serve_api(ledger_path, token, contact_read_token=contact_read_token,
+                  host=args.host, port=args.port)
     except (ConfigError, LedgerError, sqlite3.Error, OSError, ValueError) as exc:
         print(f"deskly serve-api: {exc}", file=sys.stderr)
         return 1

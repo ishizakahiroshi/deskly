@@ -252,6 +252,15 @@ select:focus-visible {
 .workspace-card { border: 1px solid #d8e0e5; border-radius: .6rem; padding: .9rem; margin: .8rem 0; }
 .workspace-card h4 { margin: 0 0 .5rem; }
 .workspace-card p { margin: .3rem 0; overflow-wrap: anywhere; }
+.workspace-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; margin: .8rem 0 1rem; }
+.workspace-summary-item { display: grid; gap: .15rem; margin: 0; padding: .7rem; border-radius: .5rem; background: #eef4f6; text-align: center; }
+.workspace-summary-item strong { font-size: 1.25rem; color: #103f51; }
+.workspace-summary-item span { font-size: .8rem; color: #526873; }
+.workspace-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .65rem; align-items: end; }
+.workspace-search label { display: grid; gap: .3rem; font-weight: 700; }
+.workspace-search input { width: 100%; min-width: 0; min-height: 2.5rem; padding: .45rem; border: 1px solid #94a6b2; border-radius: .4rem; }
+.workspace-search-results { display: grid; gap: .45rem; margin: .7rem 0 1rem; }
+.workspace-search-result { width: 100%; text-align: left; background: #fff; color: #17313d; border: 1px solid #cbd7dd; }
 .workspace-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .workspace-editor form { display: grid; gap: .8rem; }
 .workspace-editor label { display: grid; gap: .3rem; font-weight: 700; }
@@ -260,6 +269,35 @@ select:focus-visible {
 .workspace-editor dd { margin: 0; overflow-wrap: anywhere; }
 .workspace-editor button { margin-right: .5rem; }
 .workspace-source-results p { overflow-wrap: anywhere; }
+.workspace-contact-layout { display: grid; grid-template-columns: minmax(14rem, .8fr) minmax(0, 1.4fr); gap: 1rem; align-items: start; }
+.workspace-contact-list { display: grid; gap: .55rem; }
+.workspace-contact-row { display: grid; gap: .2rem; width: 100%; text-align: left; background: #fff; color: #17313d; border: 1px solid #cbd7dd; }
+.workspace-contact-row[aria-pressed="true"] { outline: 2px solid #17647c; }
+.workspace-contact-row p { margin: .1rem 0; }
+.workspace-contact-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: #f5f8f9; border-radius: .4rem; padding: .8rem; }
+.workspace-contact-detail { min-width: 0; }
+.workspace-contact-detail p, .workspace-contact-link p { overflow-wrap: anywhere; }
+.workspace-contact-link { border-top: 1px solid #d8e0e5; margin-top: 1rem; padding-top: .8rem; }
+.workspace-contact-link form { display: grid; gap: .65rem; border-top: 1px solid #e0e7ea; padding: .8rem 0; }
+.workspace-contact-link form:first-of-type { border-top: 0; }
+.workspace-contact-link label { display: grid; gap: .35rem; max-width: 34rem; font-weight: 700; }
+.workspace-contact-link select { min-height: 2.5rem; padding: .45rem; border: 1px solid #94a6b2; border-radius: .4rem; }
+.workspace-contact-link input { min-height: 2.5rem; padding: .45rem; border: 1px solid #94a6b2; border-radius: .4rem; }
+.workspace-contact-link button { justify-self: start; }
+.workspace-contact-link button:disabled { opacity: .65; cursor: wait; }
+.workspace-source-access-card > h4 { overflow-wrap: anywhere; }
+.workspace-source-access-row { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1.2fr) auto; gap: .65rem; align-items: end; border-top: 1px solid #e0e7ea; padding: .75rem 0; }
+.workspace-source-access-row label { display: grid; gap: .35rem; }
+.workspace-source-access-row label:first-child { display: flex; gap: .5rem; align-items: center; }
+.workspace-source-access-row input:not([type="checkbox"]) { min-width: 0; min-height: 2.5rem; padding: .45rem; border: 1px solid #94a6b2; border-radius: .4rem; }
+.workspace-source-access-row input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
+
+@media (max-width: 620px) {
+  .workspace-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-search { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .workspace-contact-layout { grid-template-columns: minmax(0, 1fr); }
+  .workspace-source-access-row { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+}
 
 [hidden] {
   display: none !important;

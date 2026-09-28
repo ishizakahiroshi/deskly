@@ -192,6 +192,57 @@ def test_external_url_check_rejects_protocol_relative_hostnames() -> None:
     assert EXTERNAL_URL_RE.search("url(//cdn.example.invalid/font.woff2)")
 
 
+def test_shared_workspace_contact_detail_uses_read_only_allowlisted_text_ui() -> None:
+    source = read_asset("workspace.js")
+    lowered = source.lower()
+    assert '`${projectbase}/contacts`' in lowered
+    assert '`${projectbase}/contacts/${encodeuricomponent(contactid)}`' in lowered
+    assert "workspace-contact-layout" in source
+    assert "連絡台帳に接続できていません" in source
+    assert "連絡が見つかりません" in source
+    assert "連絡の取得に失敗しました" in source
+    assert "設定済みのbinding名を正確に入力してください" in source
+    assert 'api/workspaces/${workspaceid}/sources/contact' in lowered
+    assert 'api/workspaces/${workspaceid}/projects/${currentprojectid}/contacts/link' in lowered
+    assert 'method: "post"' in lowered
+    assert "operationidfor" in lowered and "contactoperationids" in lowered
+    assert "contact_already_linked" in source
+    assert "source_not_connected" in source
+    assert "通信に失敗しました。入力を保持しています。同じ操作を再試行できます。" in source
+    assert "workspace-contact-source-state" in source
+    assert "configroleowner() ? buildcontactownertools" in lowered
+    assert 'parsed.protocol === "https:" && !parsed.username && !parsed.password' in lowered
+    assert 'link.href = parsed.href' in lowered
+    assert "innerhtml" not in lowered
+    assert "insertadjacenthtml" not in lowered
+
+
+def test_owner_source_access_ui_has_versioned_grant_and_revoke_controls() -> None:
+    source = read_asset("workspace.js").lower()
+    html = read_asset("index.html")
+    assert "api/workspaces/${workspaceid}/access/sources" in source
+    assert "api/workspaces/${workspaceid}/access/source-grants" in source
+    assert 'data["allowed"]' in source or "allowed: checkbox.checked" in source
+    assert "expected_version: grant?.version || 0" in source
+    assert 'checkbox.type = "checkbox"' in source
+    assert "接続元の権限設定を読み込めませんでした" in source
+    assert "次の取得から反映されます" in source
+    assert 'id="workspace-source-access-list"' in html
+    assert "パスワード設定は管理者の手元" in html
+
+
+def test_workspace_search_and_counts_ui_use_scoped_routes() -> None:
+    source = read_asset("workspace.js")
+    lowered = source.lower()
+    css = read_asset("app.css")
+    assert "`${base}/counts`" in lowered
+    assert "`${base}/search/${encodeuricomponent(searchinput.value)}`" in lowered
+    assert "workspace-summary" in source and ".workspace-summary" in css
+    assert "workspace-search" in source and ".workspace-search" in css
+    assert "workspace-search-result" in source and ".workspace-search-result" in css
+    assert "一致する項目はありません" in source
+
+
 def _run_synthetic_ui(
     *, waiting: dict[str, object], cases: dict[str, object], worklog: dict[str, object],
     preview: dict[str, object],
