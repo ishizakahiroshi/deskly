@@ -40,6 +40,10 @@ MAX_LOGIN_BODY_BYTES = 4096
 MAX_WORKSPACE_BODY_BYTES = 32768
 MAX_PROVIDER_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_ACTIVE_REQUESTS = 8
+# Socket I/O wait limit per connection (HTTP/1.0, closed after each response and
+# no long-lived streams), so an idle connection cannot hold a request slot.
+# Well above any legitimate request; provider work is not socket I/O.
+REQUEST_READ_TIMEOUT_SECONDS = 30.0
 MIN_PASSWORD_LENGTH = 16
 MAX_PASSWORD_LENGTH = 1024
 STATIC_ASSETS = frozenset({"index.html", "app.css", "app.js", "workspace.js"})
@@ -226,6 +230,8 @@ class DashboardHTTPServer(ThreadingHTTPServer):
 class DashboardRequestHandler(BaseHTTPRequestHandler):
     server: DashboardHTTPServer
     protocol_version = "HTTP/1.0"
+    # StreamRequestHandler applies this to the connection socket in setup().
+    timeout = REQUEST_READ_TIMEOUT_SECONDS
 
     def log_message(self, _format: str, *_args: object) -> None:
         # Paths, query strings, and submitted values are private dashboard data.
