@@ -18,6 +18,7 @@ desktop.ini
 # === AI ツールのローカル状態（トークンを含む可能性あり） ===
 .claude/
 .codex-tmp/
+/.codex/
 
 # === ツール生成キャッシュ（アカウント ID 等の識別子を含み得る・追跡しない） ===
 .wrangler/
@@ -40,6 +41,7 @@ desktop.ini
 *.local.md
 *.local.json
 scripts/local/
+/deploy/cloudflare-next/.local/
 
 # === 認証情報・secrets・鍵（public へ絶対に出さない） ===
 *.pem

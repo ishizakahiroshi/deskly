@@ -1,0 +1,64 @@
+# Case (受付) settings example. Every value here is a sample from
+# docs/reference_issuepost-design.md section 2; none of them is written in code.
+# Copy this file, then replace the identifiers and labels with your own.
+# Unknown keys, missing keys and inconsistent lists stop startup with an error.
+# The same shape is accepted as JSON.
+
+[kinds]
+values = ["bug", "request", "question", "note"]
+requires_approval = ["request"]
+
+[statuses]
+# One set only. Every app and every screen uses it.
+values   = ["new", "investigated", "in_progress", "done", "wont_do"]
+open     = ["new", "investigated", "in_progress"]
+terminal = ["done", "wont_do"]      # entering one of these sets closed_at
+initial  = "new"                    # the status the ledger gives a new case
+# Who the case is waiting for, per status: "us", "them" or "none".
+waiting  = { new = "us", investigated = "them", in_progress = "us", done = "none", wont_do = "none" }
+
+[approval_states]
+values       = ["not_required", "pending", "approved", "rejected", "on_hold"]
+# Initial value for kinds that require approval, and for kinds that do not.
+initial      = "pending"
+initial_free = "not_required"
+# The hold state. hold_until is allowed only while a case is in this state.
+hold         = "on_hold"
+
+# Display words, one per identifier and language. A language or identifier
+# missing here is shown as the identifier itself (never another language).
+[labels.ja]
+bug = "不具合"
+request = "要望"
+question = "質問"
+note = "メモ"
+new = "未対応"
+investigated = "調査完了"
+in_progress = "対応中"
+done = "完成"
+wont_do = "対応しない"
+
+[labels.en]
+bug = "Bug"
+request = "Request"
+question = "Question"
+note = "Note"
+new = "New"
+investigated = "Investigated"
+in_progress = "In progress"
+done = "Done"
+wont_do = "Won't do"
+
+[numbering]
+# The stored source prefix never changes; only its display name may.
+display_names = { app_one = "Example Product", app_two = "Other Product" }
+
+[member_access]
+# Whether members other than the workspace owner may be given a case scope
+# (team members, external collaborators, customers; see
+# docs/reference_api-contract.md "受付の見える範囲（member）").
+# false (also when this table is absent): only the workspace owner and the
+# sending apps use cases, exactly as before. Showing cases to more people needs
+# the organization's consent first. To turn it on, set true and restart; the
+# owner then grants each member a scope (PUT .../cases/member-scopes/{member_id}).
+enabled = false

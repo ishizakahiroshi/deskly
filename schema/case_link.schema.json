@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/case_link.schema.json",
+  "title": "CaseLink",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "case_number": {
+      "$ref": "case.schema.json#/$defs/number"
+    },
+    "link_type": {
+      "$ref": "#/$defs/link_type"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f]+$"
+    },
+    "added_by": {
+      "$ref": "case.schema.json#/$defs/actor"
+    },
+    "created_at": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "case_number",
+    "link_type",
+    "ref",
+    "added_by",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "description": "Evidence attached to a case: a commit hash, a document reference or a URL. Unique by (case, link_type, ref); sending the same link again adds nothing. The ledger never clones repositories or runs version control.",
+  "$defs": {
+    "link_type": {
+      "title": "CaseLinkType",
+      "type": "string",
+      "enum": [
+        "commit",
+        "doc",
+        "url"
+      ]
+    }
+  }
+}

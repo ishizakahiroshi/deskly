@@ -1,0 +1,31 @@
+{
+  "name": "@deskly/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "typecheck": "pnpm run build:ui && tsc --noEmit && tsc -p tsconfig.type-tests.json",
+    "test": "pnpm run build && node --test tests/*.test.mjs tests/adapters/*.test.mjs tests/ui/*.test.mjs",
+    "build": "pnpm run build:ui && tsc --outDir .build",
+    "start": "node .build/adapters/vps/server.js",
+    "build:ui": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260702.1",
+    "@types/node": "22.20.4",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
+    "jsdom": "26.1.0",
+    "json-schema-to-typescript": "15.0.4",
+    "miniflare": "4.20260730.0",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.3",
+    "hono": "4.13.12"
+  }
+}

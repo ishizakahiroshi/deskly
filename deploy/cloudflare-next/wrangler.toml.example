@@ -1,0 +1,19 @@
+# Copy to an ignored, private config. Build core before deployment.
+name = "deskly-personal-next"
+main = "../../core/.build/adapters/cloudflare/personal.js"
+compatibility_date = "2026-09-28"
+workers_dev = false
+preview_urls = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "deskly-personal-next"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[vars]
+PUBLIC_ORIGIN = "https://deskly-next.example.invalid"
+ACCESS_ISSUER = "https://example.cloudflareaccess.com"
+ACCESS_AUD = "replace-with-access-application-audience"
+REVISION = "replace-with-reviewed-source-revision"
+# Store ACCESS_IDENTITIES, CONFIRMATION_SECRET and CASE_SETTINGS as secret bindings.
+# ACCESS_IDENTITIES contains exactly one active owner mapping. Never commit live values.
