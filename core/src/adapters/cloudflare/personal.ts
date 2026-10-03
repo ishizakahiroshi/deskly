@@ -1,5 +1,5 @@
-/** Owner-only deployment boundary. Never provisions or migrates a database. */
-import { accessKeyLoader, createAccessAuthenticator, trustedOrigin } from './access.js';
+/** Owner-only UI plus independent scoped machine reads. Never provisions or migrates a database. */
+import { accessKeyLoader, createAccessAuthenticator, createMachineReadAuthenticator, parseMachineReadScopes, trustedOrigin } from './access.js';
 import type { AccessIdentity } from './access.js';
 import { createWorker } from './worker.js';
 import type { WorkerBindings, WorkerDependencies } from './worker.js';
@@ -28,7 +28,13 @@ export function createPersonalWorker(dependencies: WorkerDependencies = {}) {
       const loadKeys = () => keys ??= load();
       const authenticator = createAccessAuthenticator({ issuer, audience: env.ACCESS_AUD, identities, loadKeys,
         ...(dependencies.now ? { now: dependencies.now } : {}) });
-      if (!await authenticator.authenticate(request)) return Response.json({ error: 'unauthorized' }, { status: 401, headers });
+      const machineAuthenticator = createMachineReadAuthenticator({ issuer, audience: env.ACCESS_AUD,
+        scopes: parseMachineReadScopes(env.ACCESS_MACHINE_READ_SCOPES), loadKeys,
+        ...(dependencies.now ? { now: dependencies.now } : {}) });
+      const owner = await authenticator.authenticate(request);
+      const machine = owner ? null : await machineAuthenticator.authenticate(request);
+      if (!owner && !machine) return Response.json({ error: 'unauthorized' }, { status: 401, headers });
+      if (machine && !url.pathname.startsWith('/api/')) return Response.json({ error: 'forbidden' }, { status: 403, headers });
       if (url.pathname === '/healthz') {
         if (request.method !== 'GET' && request.method !== 'HEAD') {
           return Response.json({ error: 'method_not_allowed' }, { status: 405, headers: { ...headers, allow: 'GET, HEAD' } });

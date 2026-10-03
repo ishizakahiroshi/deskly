@@ -66,7 +66,11 @@ enum Command {
     /// 案件の入口（作業「入口」に md のパスと次の C を書く・読む）
     Entry(Entry),
     /// stdio MCP サーバー（標準出力は MCP 通信専用）
-    Mcp,
+    Mcp {
+        /// 案件・作業の読み取りだけを公開（Access認証では常に有効）
+        #[arg(long)]
+        read_only: bool,
+    },
 }
 #[derive(Args)]
 struct Cases {
@@ -699,13 +703,13 @@ fn resource(
 }
 fn run(cli: Cli) -> Result<Option<Value>, Error> {
     let client = Client::load(cli.config.as_deref())?;
-    if matches!(cli.command, Command::Mcp) {
+    if let Command::Mcp { read_only } = cli.command {
         // One-shot CLI never constructs or enters a Tokio runtime.
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|_| Error::transport())?
-            .block_on(deskly_cli::mcp::serve(client))?;
+            .block_on(deskly_cli::mcp::serve_with_mode(client, read_only))?;
         return Ok(None);
     }
     let workspace = cli
@@ -744,7 +748,7 @@ fn run(cli: Cli) -> Result<Option<Value>, Error> {
             include_all,
             today.as_deref(),
         ),
-        Command::Mcp => unreachable!(),
+        Command::Mcp { .. } => unreachable!(),
     }?;
     Ok(Some(result))
 }

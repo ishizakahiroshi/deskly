@@ -35,6 +35,16 @@ export interface Principal {
 export interface Authenticator {
   authenticate(request: Request): Promise<Principal | null>;
 }
+/** A separately authenticated machine: never a workspace member or owner. */
+export interface MachineReadPrincipal {
+  kind: 'machine-read';
+  service_id: string;
+  workspace_id: string;
+  project_ids: readonly string[];
+}
+export interface MachineReadAuthenticator {
+  authenticate(request: Request): Promise<MachineReadPrincipal | null>;
+}
 /**
  * A sending app authenticated by its own key (keys, allowed addresses and the
  * settings loader arrive in C8-2). sources/tenants are its visible scope; ["*"]

@@ -1,13 +1,14 @@
 /** One Web-standard handler for every frozen OpenAPI path; no host-specific APIs. */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { AppAuthenticator, AppPrincipal, Authenticator, CasePrincipal, Principal } from './ports.js';
+import type { AppAuthenticator, AppPrincipal, Authenticator, MachineReadAuthenticator, CasePrincipal, Principal } from './ports.js';
 import { ServiceError } from './ports.js';
 import type { WorkspaceService } from './service.js';
 
 export interface HttpDependencies {
   service: WorkspaceService;
   authenticator: Authenticator;
+  machineAuthenticator?: MachineReadAuthenticator;
   /**
    * Sending-app authentication (createAppAuthenticator), consulted only on case
    * routes and only when no member was authenticated.
@@ -76,7 +77,7 @@ async function input(request: Request): Promise<unknown> {
   try { return strictJson(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
   catch { throw new ServiceError('invalid_json'); }
 }
-export function createHttpHandler({ service, authenticator, appAuthenticator, origin }: HttpDependencies): (request: Request) => Promise<Response> {
+export function createHttpHandler({ service, authenticator, machineAuthenticator, appAuthenticator, origin }: HttpDependencies): (request: Request) => Promise<Response> {
   const publicUrl = new URL(origin);
   if (!['http:', 'https:'].includes(publicUrl.protocol) || publicUrl.origin !== origin) throw new Error('Invalid public origin');
   const app = new Hono<Environment>();
@@ -93,6 +94,17 @@ export function createHttpHandler({ service, authenticator, appAuthenticator, or
     }
     const browser = !((mutation || requestOrigin !== undefined) && requestOrigin !== origin)
       && !(fetchSite !== undefined && fetchSite.toLowerCase() !== 'same-origin');
+    // Machines are an explicit capability, handled before every human/app route.
+    const machine = machineAuthenticator ? await machineAuthenticator.authenticate(c.req.raw) : null;
+    if (machine) {
+      if (!browser || c.req.method !== 'GET' || url.search !== '') throw new ServiceError('forbidden', 403);
+      const match = /^\/api\/v1\/workspaces\/([^/]+)\/projects(?:\/([^/]+)(?:\/work-items(?:\/([^/]+))?)?)?$/.exec(url.pathname);
+      if (!match) throw new ServiceError('forbidden', 403);
+      const [, workspaceId, projectId, itemId] = match;
+      return c.json(projectId !== undefined && url.pathname.endsWith('/work-items')
+        ? await service.machineRead(machine, workspaceId!, projectId, undefined, true)
+        : await service.machineRead(machine, workspaceId!, projectId, itemId));
+    }
     const caseRoute = CASE_ROUTE.test(url.pathname);
     // A failed browser check never reaches member authentication (cookies are ambient).
     const principal = browser ? await authenticator.authenticate(c.req.raw) : null;

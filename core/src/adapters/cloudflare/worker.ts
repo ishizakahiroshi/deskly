@@ -9,7 +9,7 @@ import type { AppAuthenticator, Store } from '../../ports.js';
 import { WorkspaceService } from '../../service.js';
 import type { D1Driver } from '../d1/driver.js';
 import { D1Store } from '../d1/store.js';
-import { accessKeyLoader, createAccessAuthenticator, trustedOrigin } from './access.js';
+import { accessKeyLoader, createAccessAuthenticator, createMachineReadAuthenticator, parseMachineReadScopes, trustedOrigin } from './access.js';
 import type { AccessIdentity, AccessKey } from './access.js';
 export interface WorkerBindings {
   DB: D1Driver;
@@ -17,6 +17,8 @@ export interface WorkerBindings {
   ACCESS_ISSUER: string;
   ACCESS_AUD: string;
   ACCESS_IDENTITIES: string;
+  /** Explicit independent service-token read scopes; never member/owner identities. */
+  ACCESS_MACHINE_READ_SCOPES?: string;
   /** Secret binding, stable across instances; at least 32 UTF-8 bytes. */
   CONFIRMATION_SECRET: string;
   /** Case settings (TOML or JSON text). Without it every case operation fails closed. */
@@ -61,9 +63,19 @@ export function createWorker(dependencies: WorkerDependencies = {}) {
       const issuer = trustedOrigin(env.ACCESS_ISSUER);
       if (!env.DB || typeof env.CONFIRMATION_SECRET !== 'string') throw new Error('Invalid bindings');
       const identities = JSON.parse(env.ACCESS_IDENTITIES) as AccessIdentity[];
+      const load = dependencies.loadKeys ? () => dependencies.loadKeys!(issuer) : accessKeyLoader(issuer);
+      let keys: ReturnType<typeof load> | undefined;
+      const loadKeys = () => keys ??= load();
       const authenticator = createAccessAuthenticator({ issuer, audience: env.ACCESS_AUD, identities,
-        loadKeys: dependencies.loadKeys ? () => dependencies.loadKeys!(issuer) : accessKeyLoader(issuer),
+        loadKeys,
         ...(dependencies.now ? { now: dependencies.now } : {}) });
+      const machineAuthenticator = createMachineReadAuthenticator({ issuer, audience: env.ACCESS_AUD,
+        scopes: parseMachineReadScopes(env.ACCESS_MACHINE_READ_SCOPES),
+        loadKeys,
+        ...(dependencies.now ? { now: dependencies.now } : {}) });
+      if (!new URL(request.url).pathname.startsWith('/api/') && await machineAuthenticator.authenticate(request)) {
+        return Response.json({ error: 'forbidden' }, { status: 403, headers: { 'cache-control': 'no-store' } });
+      }
       const cases = caseConfig(env);
       const ui = await serveUi(request, { origin, authenticator });
       if (ui) return ui;
@@ -73,7 +85,7 @@ export function createWorker(dependencies: WorkerDependencies = {}) {
         clock: { now: () => new Date((dependencies.now?.() ?? Date.now() / 1000) * 1000).toISOString() },
         ids: { next: () => crypto.randomUUID() }, route: 'dashboard',
         ...(cases.caseSettings ? { caseSettings: cases.caseSettings } : {}) });
-      return await createHttpHandler({ service, authenticator, origin,
+      return await createHttpHandler({ service, authenticator, machineAuthenticator, origin,
         ...(cases.appAuthenticator ? { appAuthenticator: cases.appAuthenticator } : {}) })(request);
     } catch {
       return Response.json({ error: 'worker_unavailable' }, { status: 503, headers: { 'cache-control': 'no-store' } });

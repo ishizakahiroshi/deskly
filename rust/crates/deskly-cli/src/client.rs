@@ -211,6 +211,8 @@ impl std::error::Error for Error {}
 struct FileConfig {
     endpoint: Option<String>,
     token: Option<String>,
+    access_client_id: Option<String>,
+    access_client_secret: Option<String>,
     timeout_seconds: Option<u64>,
 }
 
@@ -225,6 +227,19 @@ impl FileConfig {
         if source.len() > 65_536 {
             return Err(Error::config());
         }
+        let value: Value = serde_json::from_slice(&source).map_err(|_| Error::config())?;
+        if value.get("token").is_some()
+            && (value.get("access_client_id").is_some()
+                || value.get("access_client_secret").is_some())
+        {
+            return Err(Error::config());
+        }
+        for key in ["access_client_id", "access_client_secret"] {
+            if value.get(key).is_some_and(|value| !value.is_string()) {
+                return Err(Error::config());
+            }
+        }
+        // Deserialize the source again to retain duplicate-field rejection.
         serde_json::from_slice(&source).map_err(|_| Error::config())
     }
 }
@@ -237,11 +252,37 @@ pub(crate) enum Verb {
     Patch,
 }
 
+// Never derive Debug: both variants contain authentication material.
+#[derive(Clone)]
+enum Authentication {
+    Bearer(String),
+    Access {
+        client_id: String,
+        client_secret: String,
+    },
+}
+impl Authentication {
+    fn validate(&self) -> Result<(), Error> {
+        let valid = |value: &str| {
+            !value.is_empty()
+                && value.len() <= 8192
+                && value.bytes().all(|byte| byte.is_ascii_graphic())
+        };
+        match self {
+            Self::Bearer(token) if valid(token) => Ok(()),
+            Self::Access {
+                client_id,
+                client_secret,
+            } if valid(client_id) && valid(client_secret) && client_id.len() <= 256 => Ok(()),
+            _ => Err(Error::config()),
+        }
+    }
+}
 #[derive(Clone)]
 pub struct Client {
     agent: ureq::Agent,
     endpoint: String,
-    token: String,
+    authentication: Authentication,
 }
 impl Client {
     /// Only an explicitly selected file is read; this never inspects the real home.
@@ -260,15 +301,79 @@ impl Client {
             }
         };
         let endpoint = value("DESKLY_ENDPOINT", file.endpoint)?;
-        let token = value("DESKLY_TOKEN", file.token)?;
+        let optional = |key: &str| -> Result<Option<String>, Error> {
+            match env::var(key) {
+                Ok(value) => Ok(Some(value)),
+                Err(env::VarError::NotPresent) => Ok(None),
+                Err(_) => Err(Error::config()),
+            }
+        };
+        let token = optional("DESKLY_TOKEN")?;
+        let client_id = optional("DESKLY_ACCESS_CLIENT_ID")?;
+        let client_secret = optional("DESKLY_ACCESS_CLIENT_SECRET")?;
+        let access = client_id.is_some()
+            || client_secret.is_some()
+            || file.access_client_id.is_some()
+            || file.access_client_secret.is_some();
+        if access && (token.is_some() || file.token.is_some()) {
+            return Err(Error::config());
+        }
+        let pair =
+            |id: Option<String>, secret: Option<String>| -> Result<Option<Authentication>, Error> {
+                match (id, secret) {
+                    (None, None) => Ok(None),
+                    (Some(client_id), Some(client_secret)) => {
+                        let auth = Authentication::Access {
+                            client_id,
+                            client_secret,
+                        };
+                        auth.validate()?;
+                        Ok(Some(auth))
+                    }
+                    _ => Err(Error::config()),
+                }
+            };
+        let authentication = if access {
+            let file_auth = pair(file.access_client_id, file.access_client_secret)?;
+            let environment_auth = pair(client_id, client_secret)?;
+            environment_auth.or(file_auth).ok_or_else(Error::config)?
+        } else {
+            Authentication::Bearer(token.or(file.token).ok_or_else(Error::config)?)
+        };
         let timeout = match env::var("DESKLY_TIMEOUT_SECONDS") {
             Ok(value) => value.parse().map_err(|_| Error::config())?,
             Err(env::VarError::NotPresent) => file.timeout_seconds.unwrap_or(10),
             Err(_) => return Err(Error::config()),
         };
-        Self::new(&endpoint, token, timeout)
+        Self::with_authentication(&endpoint, authentication, timeout)
     }
     pub fn new(endpoint: &str, token: String, timeout: u64) -> Result<Self, Error> {
+        Self::with_authentication(endpoint, Authentication::Bearer(token), timeout)
+    }
+    pub fn new_access(
+        endpoint: &str,
+        client_id: String,
+        client_secret: String,
+        timeout: u64,
+    ) -> Result<Self, Error> {
+        Self::with_authentication(
+            endpoint,
+            Authentication::Access {
+                client_id,
+                client_secret,
+            },
+            timeout,
+        )
+    }
+    pub fn uses_access(&self) -> bool {
+        matches!(self.authentication, Authentication::Access { .. })
+    }
+    fn with_authentication(
+        endpoint: &str,
+        authentication: Authentication,
+        timeout: u64,
+    ) -> Result<Self, Error> {
+        authentication.validate()?;
         let url = url::Url::parse(endpoint).map_err(|_| Error::config())?;
         let loopback = match url.host() {
             Some(url::Host::Domain(host)) => host == "localhost",
@@ -283,9 +388,6 @@ impl Client {
             || url.query().is_some()
             || url.fragment().is_some()
             || url.path() != "/"
-            || token.is_empty()
-            || token.len() > 8192
-            || token.bytes().any(|b| !b.is_ascii_graphic())
             || !(1..=300).contains(&timeout)
         {
             return Err(Error::config());
@@ -300,8 +402,21 @@ impl Client {
         Ok(Self {
             agent,
             endpoint: url.origin().ascii_serialization(),
-            token,
+            authentication,
         })
+    }
+    fn authenticated<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
+        match &self.authentication {
+            Authentication::Bearer(token) => {
+                request.header("Authorization", format!("Bearer {token}"))
+            }
+            Authentication::Access {
+                client_id,
+                client_secret,
+            } => request
+                .header("CF-Access-Client-Id", client_id)
+                .header("CF-Access-Client-Secret", client_secret),
+        }
     }
     pub(crate) fn safe(&self, value: &Value) -> Result<(), Error> {
         fn contains(value: &Value, token: &str) -> bool {
@@ -314,7 +429,14 @@ impl Client {
                 _ => false,
             }
         }
-        if contains(value, &self.token) {
+        let reflected = match &self.authentication {
+            Authentication::Bearer(token) => contains(value, token),
+            Authentication::Access {
+                client_id,
+                client_secret,
+            } => contains(value, client_id) || contains(value, client_secret),
+        };
+        if reflected {
             Err(Error::response())
         } else {
             Ok(())
@@ -339,25 +461,17 @@ impl Client {
         body: Option<&Value>,
     ) -> Result<Value, Error> {
         let url = format!("{}{path}", self.endpoint);
-        let authorization = format!("Bearer {}", self.token);
+
         let response = match (verb, body) {
             (Verb::Post, Some(body)) => self
-                .agent
-                .post(&url)
-                .header("Authorization", &authorization)
+                .authenticated(self.agent.post(&url))
                 .header("Origin", &self.endpoint)
                 .send_json(body),
             (Verb::Patch, Some(body)) => self
-                .agent
-                .patch(&url)
-                .header("Authorization", &authorization)
+                .authenticated(self.agent.patch(&url))
                 .header("Origin", &self.endpoint)
                 .send_json(body),
-            (Verb::Get, None) => self
-                .agent
-                .get(&url)
-                .header("Authorization", &authorization)
-                .call(),
+            (Verb::Get, None) => self.authenticated(self.agent.get(&url)).call(),
             _ => return Err(Error::validation()),
         };
         let mut response = response.map_err(|_| Error::transport())?;

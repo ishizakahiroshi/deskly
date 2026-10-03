@@ -26,8 +26,26 @@ struct Session {
 }
 impl Session {
     fn new(server: &MockServer, home: &TempHome) -> Self {
-        let mut child = command(server, home)
-            .arg("mcp")
+        Self::with_mode(server, home, false, false)
+    }
+    fn with_mode(server: &MockServer, home: &TempHome, read_only: bool, access: bool) -> Self {
+        let mut cmd = command(server, home);
+        cmd.arg("mcp");
+        if read_only {
+            cmd.arg("--read-only");
+        }
+        if access {
+            cmd.env_remove("DESKLY_TOKEN")
+                .env(
+                    "DESKLY_ACCESS_CLIENT_ID",
+                    "Opaque:synthetic+read/client=V2.access",
+                )
+                .env(
+                    "DESKLY_ACCESS_CLIENT_SECRET",
+                    "synthetic-access-secret-for-tests-only",
+                );
+        }
+        let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -780,4 +798,69 @@ fn entry_tools_set_and_show_a_project_entry_with_a_preview_first() {
         "validation_error"
     );
     session.finish();
+}
+
+#[test]
+fn read_only_mcp_allowlist_rejects_every_direct_unadvertised_tool() {
+    for (explicit, access) in [(true, false), (true, true), (false, true)] {
+        let server = MockServer::new(|request| {
+            assert_eq!(request.method, "GET");
+            if request.path.ends_with("/projects") {
+                Response::json(
+                    200,
+                    json!({"projects":[fixture("project")],"archived_projects":[]}),
+                )
+            } else {
+                assert!(request.path.ends_with("/work-items"));
+                Response::json(200, json!({"items":[fixture("work_item")]}))
+            }
+        });
+        let home = TempHome::new();
+        let mut full = Session::new(&server, &home);
+        let advertised = full.request("tools/list", json!({}))["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .clone();
+        full.finish();
+        let mut session = Session::with_mode(&server, &home, explicit, access);
+        let listed = session.request("tools/list", json!({}));
+        let names = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["deskly_projects", "deskly_items"]);
+        assert_eq!(
+            result(&session.call("deskly_projects", json!({"workspace":WORKSPACE})))["projects"][0]
+                ["id"],
+            PROJECT
+        );
+        assert_eq!(
+            result(&session.call(
+                "deskly_items",
+                json!({"workspace":WORKSPACE,"project":PROJECT})
+            ))["items"][0]["id"],
+            ITEM
+        );
+        let before = server.requests().len();
+        for tool in advertised {
+            let name = tool["name"].as_str().unwrap();
+            if names.contains(&name) {
+                continue;
+            }
+            let denied = session.call(
+                name,
+                json!({"workspace":WORKSPACE,"project":PROJECT,"apply":true}),
+            );
+            assert!(
+                denied.get("error").is_some() || denied["result"]["isError"] == true,
+                "{name}: {denied}"
+            );
+        }
+        let unknown = session.call("unadvertised_synthetic", json!({}));
+        assert!(unknown.get("error").is_some() || unknown["result"]["isError"] == true);
+        assert_eq!(server.requests().len(), before);
+        session.finish();
+    }
 }

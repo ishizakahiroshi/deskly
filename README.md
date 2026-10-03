@@ -16,7 +16,7 @@
 
 The `develop` integration candidate contains two implementations. The existing Python contact-ledger CLI, MCP and deployment under `deskly/` and `deploy/` are retained. The next-version workspace implementation is `core/` (TypeScript API, UI, SQLite/D1 adapters), `rust/` (CLI and stdio MCP), and the canonical `schema/`. `deploy/cloudflare-next/` is the separate owner-only Cloudflare deployment candidate.
 
-The next-version API uses stable workspace/project/item IDs and retains versioned preview/save, history, archive and restore contracts. Cloudflare owner access validates Access JWTs at both the personal boundary and inner API, then checks actual memberships in the service. Machine read access is being implemented separately for explicitly allowed projects; it does not grant owner/member rights. See the [read-access contract](docs/bot/local-agent-read-access/AUTH_CONTRACT.md) and [progress](docs/bot/local-agent-read-access/PROGRESS.md) for tested scope and remaining acceptance.
+The next-version API uses stable workspace/project/item IDs and retains versioned preview/save, history, archive and restore contracts. Cloudflare owner access validates Access JWTs at both the personal boundary and inner API, then checks actual memberships in the service. Machine read access has a separate capability for explicitly allowed projects; it does not grant owner/member rights. See the [read-access contract](docs/bot/local-agent-read-access/AUTH_CONTRACT.md) and [progress](docs/bot/local-agent-read-access/PROGRESS.md) for tested scope and remaining acceptance.
 
 These are source-tree candidates, not a production release or a completed migration. Live Access claims, revocation, Windows AI/MCP, owner browser flows and personal deployment/recovery need separate operator acceptance. Company data and credentials are outside this work. The legacy Python localhost dashboard still binds to `127.0.0.1`; its setup instructions below are specific to that implementation.
 
@@ -33,7 +33,7 @@ cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path rust/Cargo.toml --all
 ```
 
-The frozen schema generates TypeScript and Rust types; do not change it for authentication scopes. Existing Bearer-authenticated adapters remain supported. The next-version CLI reads only explicitly chosen JSON config or dedicated environment variables, never the legacy home automatically. See [Cloudflare deployment](deploy/cloudflare-next/README.md) and [migration boundary](docs/reference_personal-migration.md); running tests does not authorize or perform deployment.
+The frozen schema generates TypeScript and Rust types; do not change it for authentication scopes. Existing Bearer-authenticated adapters remain supported. The next-version CLI reads only explicitly chosen JSON config or dedicated environment variables, never the legacy home automatically. For the scoped machine client, see [local AI read-only setup](docs/reference_local-agent-read-access.md). See [Cloudflare deployment](deploy/cloudflare-next/README.md) and [migration boundary](docs/reference_personal-migration.md); running tests does not authorize or perform deployment.
 
 ## Contact ledger CLI and MCP
 

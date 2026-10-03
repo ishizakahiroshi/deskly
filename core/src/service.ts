@@ -7,7 +7,7 @@ import type { Milestone } from './generated/milestone.js';
 import type { WorkItem } from './generated/work_item.js';
 import type { Membership, WorkspaceMembership, ProjectMembership, SourceMembership } from './generated/membership.js';
 import type { EntitySnapshot, EntityEvent, Event, AccessSnapshot, AccessEvent, Reference, Observation } from './generated/event.js';
-import type { Principal, ServiceDependencies, StoreSession } from './ports.js';
+import type { Principal, MachineReadPrincipal, ServiceDependencies, StoreSession } from './ports.js';
 import { ServiceError, ConflictError } from './ports.js';
 import { ContactLedgerService, validateContact } from './contact-service.js';
 import { CaseService } from './case-service.js';
@@ -122,6 +122,48 @@ export class WorkspaceService {
     return project;
   }
 
+  /** Dedicated read capability; never enters the human membership context. */
+  async machineRead(principal: MachineReadPrincipal, workspaceId: string, projectId?: string, itemId?: string, listItems = false): Promise<Project | WorkItem | { projects: Project[]; archived_projects: Project[] } | { items: WorkItem[] }> {
+    const notFound = (): never => { throw new ServiceError('not_found', 404); };
+    if (!principal || principal.kind !== 'machine-read' || !principal.service_id ||
+      !Array.isArray(principal.project_ids) || !principal.project_ids.length || principal.workspace_id !== workspaceId) notFound();
+    try {
+      v.uuid(workspaceId);
+      for (const id of principal.project_ids) v.uuid(id);
+      if (projectId !== undefined) v.uuid(projectId);
+      if (itemId !== undefined) v.uuid(itemId);
+    } catch { notFound(); }
+    if ((projectId !== undefined && !principal.project_ids.includes(projectId)) || ((itemId !== undefined || listItems) && projectId === undefined)) notFound();
+    return this.dependencies.store.read(async session => {
+      const workspace = await session.workspaces.get(workspaceId);
+      if (!workspace || workspace.workspace_id !== workspaceId || workspace.schema_version !== 3) return notFound();
+      const project = async (id: string): Promise<Project> => {
+        const value = await session.resources.get(workspaceId, id);
+        if (!value || value.id !== id || value.workspace_id !== workspaceId || value.type !== 'project' || value.archived) return notFound();
+        return v.entity(value, workspaceId) as Project;
+      };
+      if (projectId === undefined) {
+        const projects: Project[] = [];
+        // Fetch only explicitly granted IDs, never fetch all projects for client filtering.
+        for (const id of [...principal.project_ids].sort()) {
+          try { projects.push(await project(id)); }
+          catch (error) { if (!(error instanceof ServiceError) || error.status !== 404) throw error; }
+        }
+        return { projects, archived_projects: [] };
+      }
+      const parent = await project(projectId);
+      if (listItems) {
+        const items = (await session.resources.list(workspaceId))
+          .filter(item => item.workspace_id === workspaceId && item.project_id === projectId && item.type === 'work_item' && !item.archived)
+          .map(item => v.entity(item, workspaceId) as WorkItem).sort(compareIds);
+        return { items };
+      }
+      if (itemId === undefined) return parent;
+      const item = await session.resources.get(workspaceId, itemId);
+      if (!item || item.id !== itemId || item.workspace_id !== workspaceId || item.project_id !== projectId || item.type !== 'work_item' || item.archived) return notFound();
+      return v.entity(item, workspaceId) as WorkItem;
+    });
+  }
   async workspace(principal: Principal, workspaceId: string): Promise<Workspace> {
     return this.dependencies.store.read(async (session) => {
       const { workspace } = await this.context(session, principal, workspaceId);
