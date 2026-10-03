@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/contact_waiting.schema.json",
+  "title": "ContactWaitingRow",
+  "type": "object",
+  "properties": {
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "turn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "こちら",
+        "相手",
+        null
+      ]
+    },
+    "due": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "overdue": {
+      "type": "boolean"
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/contact_state"
+      }
+    },
+    "summaries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contact_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/contact_id"
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ledger_names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "project",
+    "turn",
+    "due",
+    "overdue",
+    "states",
+    "summaries",
+    "contact_ids",
+    "count",
+    "ledger_names",
+    "contact_refs"
+  ],
+  "additionalProperties": false
+}

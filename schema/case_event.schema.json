@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/case_event.schema.json",
+  "title": "CaseEvent",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "case_number": {
+      "$ref": "case.schema.json#/$defs/number"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Append order within one case, starting at 1."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "create",
+        "update"
+      ]
+    },
+    "actor": {
+      "$ref": "case.schema.json#/$defs/actor"
+    },
+    "actor_ref": {
+      "$ref": "case.schema.json#/$defs/nullable_ref"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/reason"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "at_utc": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/change"
+      }
+    }
+  },
+  "required": [
+    "workspace_id",
+    "case_number",
+    "seq",
+    "action",
+    "actor",
+    "actor_ref",
+    "reason",
+    "at_utc",
+    "changes"
+  ],
+  "additionalProperties": false,
+  "description": "Append-only status, approval and deadline history. Never overwritten or deleted. actor is the authenticated writer; actor_ref is the app's own identifier of the person who acted (for example an approver).",
+  "$defs": {
+    "change": {
+      "title": "CaseChange",
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "enum": [
+            "status",
+            "approval_state",
+            "promised_due",
+            "hold_until",
+            "closed_at"
+          ]
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "field",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

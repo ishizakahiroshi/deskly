@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/contact_record.schema.json",
+  "title": "ContactRecord",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "source_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "contact": {
+      "$ref": "contact.schema.json"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "source_id",
+    "version",
+    "contact"
+  ],
+  "additionalProperties": false,
+  "description": "Owner-only private contact ledger envelope; never a project-member projection."
+}

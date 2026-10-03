@@ -1,0 +1,23 @@
+{
+  "id": "c-20260101-0123abcd",
+  "state": "下書き",
+  "state_inferred": false,
+  "project": "",
+  "recipient": "",
+  "channel": "",
+  "sent_at": "",
+  "due": "",
+  "promise": "",
+  "agreement": "",
+  "sensitive": "",
+  "basis": "",
+  "note": "",
+  "references": "",
+  "shared_url": "",
+  "body": "合成本文",
+  "source_path": "",
+  "source_hash": "",
+  "extra": {},
+  "created_at": "",
+  "updated_at": ""
+}

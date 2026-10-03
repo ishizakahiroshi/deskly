@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/contact_command.schema.json",
+  "title": "ContactActionCommand",
+  "description": "All writes require preview then explicit apply. Any of the six states may follow any other; unchanged state is a no-op. Reply appends a trimmed summary and sets 対応中. add_draft never accepts state or client timestamps. Preview allocates contact_id when null.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/add_draft"
+    },
+    {
+      "$ref": "#/$defs/set_state"
+    },
+    {
+      "$ref": "#/$defs/record_reply"
+    }
+  ],
+  "$defs": {
+    "add_draft": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "action": {
+          "const": "add_draft"
+        },
+        "contact_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/contact_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_version": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "state_inferred": {
+              "$ref": "contact.schema.json#/properties/state_inferred"
+            },
+            "project": {
+              "$ref": "contact.schema.json#/properties/project"
+            },
+            "recipient": {
+              "$ref": "contact.schema.json#/properties/recipient"
+            },
+            "channel": {
+              "$ref": "contact.schema.json#/properties/channel"
+            },
+            "sent_at": {
+              "$ref": "contact.schema.json#/properties/sent_at"
+            },
+            "due": {
+              "$ref": "contact.schema.json#/properties/due"
+            },
+            "promise": {
+              "$ref": "contact.schema.json#/properties/promise"
+            },
+            "agreement": {
+              "$ref": "contact.schema.json#/properties/agreement"
+            },
+            "sensitive": {
+              "$ref": "contact.schema.json#/properties/sensitive"
+            },
+            "basis": {
+              "$ref": "contact.schema.json#/properties/basis"
+            },
+            "note": {
+              "$ref": "contact.schema.json#/properties/note"
+            },
+            "references": {
+              "$ref": "contact.schema.json#/properties/references"
+            },
+            "shared_url": {
+              "$ref": "contact.schema.json#/properties/shared_url"
+            },
+            "body": {
+              "$ref": "contact.schema.json#/properties/body"
+            },
+            "source_path": {
+              "$ref": "contact.schema.json#/properties/source_path"
+            },
+            "source_hash": {
+              "$ref": "contact.schema.json#/properties/source_hash"
+            },
+            "extra": {
+              "$ref": "contact.schema.json#/properties/extra"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "reason": {
+          "$ref": "common.schema.json#/$defs/reason"
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "contact_id",
+        "expected_version",
+        "data",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "set_state": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "action": {
+          "const": "set_state"
+        },
+        "contact_id": {
+          "$ref": "common.schema.json#/$defs/contact_id"
+        },
+        "expected_version": {
+          "$ref": "common.schema.json#/$defs/version"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "$ref": "common.schema.json#/$defs/contact_state"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        "reason": {
+          "$ref": "common.schema.json#/$defs/reason"
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "contact_id",
+        "expected_version",
+        "data",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "record_reply": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "action": {
+          "const": "record_reply"
+        },
+        "contact_id": {
+          "$ref": "common.schema.json#/$defs/contact_id"
+        },
+        "expected_version": {
+          "$ref": "common.schema.json#/$defs/version"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "reason": {
+          "$ref": "common.schema.json#/$defs/reason"
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "contact_id",
+        "expected_version",
+        "data",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

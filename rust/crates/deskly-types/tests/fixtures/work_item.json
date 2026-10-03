@@ -1,0 +1,16 @@
+{
+  "id": "00000000-0000-0000-0000-000000000005",
+  "workspace_id": "00000000-0000-0000-0000-000000000001",
+  "project_id": "00000000-0000-0000-0000-000000000003",
+  "type": "work_item",
+  "version": 1,
+  "archived": false,
+  "kind": "開発",
+  "title": "合成作業",
+  "assignee_id": "00000000-0000-0000-0000-000000000002",
+  "next_action": "合成確認",
+  "check_date": "",
+  "waiting_reason": "",
+  "state": "未確認",
+  "milestone_id": ""
+}

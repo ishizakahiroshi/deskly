@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/case.schema.json",
+  "title": "Case",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "number": {
+      "$ref": "#/$defs/number"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "tenant_ref": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "seq": {
+      "$ref": "#/$defs/seq"
+    },
+    "origin": {
+      "$ref": "#/$defs/origin"
+    },
+    "kind": {
+      "$ref": "#/$defs/identifier"
+    },
+    "status": {
+      "$ref": "#/$defs/identifier"
+    },
+    "approval_state": {
+      "$ref": "#/$defs/identifier"
+    },
+    "title": {
+      "$ref": "#/$defs/title"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    },
+    "reporter_ref": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "screen_id": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "feature_id": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "environment": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "version": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "url": {
+      "$ref": "#/$defs/nullable_url"
+    },
+    "fingerprint": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "promised_due": {
+      "$ref": "#/$defs/nullable_date"
+    },
+    "hold_until": {
+      "$ref": "#/$defs/nullable_date"
+    },
+    "closed_at": {
+      "$ref": "common.schema.json#/$defs/nullable_utc_timestamp"
+    },
+    "duplicate_of": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "legacy_ref": {
+      "$ref": "#/$defs/nullable_ref"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "created_at": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    },
+    "updated_at": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "number",
+    "source",
+    "tenant_ref",
+    "seq",
+    "origin",
+    "kind",
+    "status",
+    "approval_state",
+    "title",
+    "body",
+    "reporter_ref",
+    "screen_id",
+    "feature_id",
+    "environment",
+    "version",
+    "url",
+    "fingerprint",
+    "promised_due",
+    "hold_until",
+    "closed_at",
+    "duplicate_of",
+    "legacy_ref",
+    "revision",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "description": "One received case (display name is configurable; the stored identifier is case). The ledger stores what the sending app sent and never rewrites it. number is issued only by the ledger as <source>-<seq>. kind, status and approval_state are configured identifiers, never display words; the service checks them against the loaded settings. version is the app version where the case happened; revision is the optimistic concurrency counter. Cases are never deleted. All timestamps are UTC.",
+  "$defs": {
+    "identifier": {
+      "title": "CaseIdentifier",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "description": "Configured identifier (kind, status or approval state). Display labels are separate settings and are never stored."
+    },
+    "source": {
+      "title": "CaseSource",
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9_])?$",
+      "description": "Sending app prefix, fixed by the authenticated app scope and never taken from a request body. Stored prefixes never change."
+    },
+    "app_name": {
+      "title": "CaseAppName",
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9_])?$",
+      "description": "Name of the authenticated sending app (the name joining its key and scope settings)."
+    },
+    "number": {
+      "title": "CaseNumber",
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9_])?-[1-9][0-9]{0,14}$",
+      "description": "Public case number <source>-<seq>, issued only by the ledger."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Consecutive number within one source, starting at 1."
+    },
+    "origin": {
+      "title": "CaseOrigin",
+      "type": "string",
+      "enum": [
+        "human",
+        "detected"
+      ]
+    },
+    "ref": {
+      "title": "CaseRef",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+      "description": "Opaque identifier already owned by the sending app. Stored as sent; never joined to any user, tenant or app table."
+    },
+    "nullable_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ref"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "url": {
+      "title": "CaseUrl",
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^https?://[^\\u0000-\\u0020\\u007f-\\u009f]+$"
+    },
+    "nullable_url": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/url"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "title": "CaseTitle",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+      "description": "Rejected, never truncated, when longer than 200 characters."
+    },
+    "body": {
+      "title": "CaseBody",
+      "type": "string",
+      "maxLength": 50000,
+      "description": "Text written by a person or the detected content, stored exactly as received."
+    },
+    "date": {
+      "title": "CaseDate",
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Calendar date YYYY-MM-DD, compared in UTC."
+    },
+    "nullable_date": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actor": {
+      "title": "CaseActor",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "app"
+            },
+            "app": {
+              "$ref": "#/$defs/app_name"
+            }
+          },
+          "required": [
+            "kind",
+            "app"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "member"
+            },
+            "member_id": {
+              "$ref": "common.schema.json#/$defs/stable_id"
+            }
+          },
+          "required": [
+            "kind",
+            "member_id"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Authenticated writer resolved by the server: a sending app or a workspace owner. Never taken from a request body."
+    }
+  }
+}

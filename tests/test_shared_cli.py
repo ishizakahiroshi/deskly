@@ -30,7 +30,7 @@ def _apply(service: WorkspaceService, request: dict[str, object]) -> dict[str, o
 
 
 def _setup(home: Path) -> tuple[str, str, str, str, str]:
-    home.mkdir(parents=True)
+    home.mkdir(mode=0o700, parents=True)
     workspace_id, owner_id = WorkspaceStore.initialize(home, "合成workspace", "UTC", "合成owner")
     owner = WorkspaceService(home, workspace_id, secret=b"synthetic-owner-service-secret")
     project_one = _apply(owner, _request("project", {

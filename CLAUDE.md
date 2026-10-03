@@ -31,7 +31,15 @@ deskly は、開発・営業・連絡を案件ごとに見渡すための道具�
 - 会計・課金・ログの閲覧
 - 多言語の画面（まず日本語）
 
-## 技術スタック
+## 新版の統合候補（develop）
+
+`core/` はTypeScriptのservice/API/UIとSQLite/D1 adapters、`rust/` はRust CLI/MCP、`schema/` は正典型、`deploy/cloudflare-next/` は別の個人用Worker候補。旧Python版と配置を削除しない。新版の実装・検収状況は `docs/bot/local-agent-read-access/PROGRESS.md`、認証契約は同ディレクトリの `AUTH_CONTRACT.md`。合成テスト成功を本番・Windows検収と呼ばない。
+
+Node >=22、Rust >=1.88がmanifest上の条件。依存lockと整合するtoolchainで `pnpm --dir core install --frozen-lockfile`、`pnpm --dir core run typecheck`、`pnpm --dir core run test`、`cargo fmt --manifest-path rust/Cargo.toml --all -- --check`、`cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings`、`cargo test --manifest-path rust/Cargo.toml --all` を実行する。全コードのlicenseは既存LICENSEのAGPL-3.0-or-laterに整合する。
+
+本人active owner一人と実在membership検査を保つ。機械は別のread-only主体として配備設定のworkspace/project allowlistだけを読める。APPS_CONFIG流用、偽owner/member、Client IDヘッダーだけの認証は禁止。schema、状態語彙、履歴/復元、既存Bearer互換を保ち、CI/scannerはこの依頼で変更しない。
+
+## 旧Python版の技術スタック
 
 | 層 | 技術 |
 |---|---|

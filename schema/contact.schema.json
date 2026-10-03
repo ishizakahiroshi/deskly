@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/contact.schema.json",
+  "title": "Contact",
+  "description": "Complete legacy Contact dataclass, including import metadata. This full shape is for existing authorized ledger/import/export boundaries, not an allowlist for shared Web output.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "common.schema.json#/$defs/contact_id"
+    },
+    "state": {
+      "$ref": "common.schema.json#/$defs/contact_state"
+    },
+    "state_inferred": {
+      "type": "boolean"
+    },
+    "project": {
+      "$ref": "common.schema.json#/$defs/text",
+      "description": "Legacy display/matching string only. Never join or authorize by this value; use workspace_id, source_id and contact_id in explicit references."
+    },
+    "recipient": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "channel": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "sent_at": {
+      "$ref": "common.schema.json#/$defs/text",
+      "description": "Preserved legacy string; it may be empty or non-ISO. Not silently converted to a timestamp."
+    },
+    "due": {
+      "$ref": "common.schema.json#/$defs/text",
+      "description": "Preserved legacy string; it may be empty or non-ISO. Not silently converted to a date."
+    },
+    "promise": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "agreement": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "sensitive": {
+      "$ref": "common.schema.json#/$defs/text",
+      "description": "Any nonempty value requires suppressing this entire record from shared responses; not merely hiding this field."
+    },
+    "basis": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "note": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "references": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "shared_url": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "body": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "source_path": {
+      "$ref": "common.schema.json#/$defs/text",
+      "description": "Legacy private import path; excluded from shared contact projections."
+    },
+    "source_hash": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "extra": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Unknown legacy import headers. Keys and values are strings; never dropped by migration."
+    },
+    "created_at": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "updated_at": {
+      "$ref": "common.schema.json#/$defs/text"
+    }
+  },
+  "required": [
+    "id",
+    "state",
+    "state_inferred",
+    "project",
+    "recipient",
+    "channel",
+    "sent_at",
+    "due",
+    "promise",
+    "agreement",
+    "sensitive",
+    "basis",
+    "note",
+    "references",
+    "shared_url",
+    "body",
+    "source_path",
+    "source_hash",
+    "extra",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sharedContact": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/properties/id"
+        },
+        "state": {
+          "$ref": "#/properties/state"
+        },
+        "state_inferred": {
+          "$ref": "#/properties/state_inferred"
+        },
+        "project": {
+          "$ref": "#/properties/project"
+        },
+        "recipient": {
+          "$ref": "#/properties/recipient"
+        },
+        "channel": {
+          "$ref": "#/properties/channel"
+        },
+        "sent_at": {
+          "$ref": "#/properties/sent_at"
+        },
+        "due": {
+          "$ref": "#/properties/due"
+        },
+        "promise": {
+          "$ref": "#/properties/promise"
+        },
+        "agreement": {
+          "$ref": "#/properties/agreement"
+        },
+        "basis": {
+          "$ref": "#/properties/basis"
+        },
+        "note": {
+          "$ref": "#/properties/note"
+        },
+        "references": {
+          "$ref": "#/properties/references"
+        },
+        "shared_url": {
+          "$ref": "#/properties/shared_url"
+        },
+        "body": {
+          "$ref": "#/properties/body"
+        },
+        "created_at": {
+          "$ref": "#/properties/created_at"
+        },
+        "updated_at": {
+          "$ref": "#/properties/updated_at"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "state_inferred",
+        "project",
+        "recipient",
+        "channel",
+        "sent_at",
+        "due",
+        "promise",
+        "agreement",
+        "basis",
+        "note",
+        "references",
+        "shared_url",
+        "body",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "description": "Read-only detail projection for a specifically linked, non-sensitive contact after both project and source permission checks. No general cross-ledger listing. Body stays at its source and is never persisted to workspace snapshots."
+    }
+  }
+}
