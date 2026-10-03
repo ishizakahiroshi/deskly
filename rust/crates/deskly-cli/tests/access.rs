@@ -237,17 +237,41 @@ fn access_write_preview_and_entry_commands_remain_subject_to_server_denial() {
         assert_eq!(request.headers["cf-access-client-secret"], SECRET);
         Response::json(403, json!({"error":"forbidden"}))
     });
-    let home = TempHome::new();
-    for args in [
-        vec![
+    let client = Client::new_access(server.endpoint(), CLIENT_ID.into(), SECRET.into(), 2).unwrap();
+    let error = client
+        .write(
+            WORKSPACE,
             "projects",
             "archive",
-            PROJECT,
-            "--version",
-            "1",
-            "--reason",
+            None,
+            Some(PROJECT),
+            Some(1),
+            None,
             "synthetic",
-        ],
+            false,
+        )
+        .unwrap_err();
+    assert_eq!(error.json()["error"], "forbidden");
+    assert_eq!(error.json()["status"], 403);
+    let error = client
+        .entry_set(WORKSPACE, PROJECT, "synthetic.md", "synthetic", None, false)
+        .unwrap_err();
+    assert_eq!(error.json()["error"], "forbidden");
+    assert_eq!(error.json()["status"], 403);
+    assert_eq!(server.requests().len(), 2);
+}
+
+#[test]
+fn access_cli_refuses_every_non_allowlisted_command_before_network_or_local_work() {
+    let server = MockServer::new(|_| panic!("forbidden CLI command attempted HTTP"));
+    let home = TempHome::new();
+    for args in [
+        vec!["my-work", "--member", MEMBER],
+        vec!["search", "synthetic"],
+        vec!["counts"],
+        vec!["history", PROJECT],
+        vec!["milestones", "--project", PROJECT, "list"],
+        vec!["entry", "show", "--project", PROJECT],
         vec![
             "entry",
             "set",
@@ -258,18 +282,54 @@ fn access_write_preview_and_entry_commands_remain_subject_to_server_denial() {
             "--next",
             "synthetic",
         ],
+        vec![
+            "projects",
+            "archive",
+            PROJECT,
+            "--version",
+            "1",
+            "--reason",
+            "synthetic",
+        ],
+        vec![
+            "items",
+            "--project",
+            PROJECT,
+            "archive",
+            ITEM,
+            "--version",
+            "1",
+            "--reason",
+            "synthetic",
+            "--apply",
+        ],
+        vec![
+            "projects",
+            "create",
+            "--data",
+            "@missing-synthetic-file.json",
+            "--reason",
+            "synthetic",
+        ],
+        vec!["cases", "list"],
+        vec!["contacts", "--source", MEMBER, "list"],
+        vec!["waiting", "--source", MEMBER],
     ] {
         let output = access(&server, &home)
             .arg("--json")
-            .args(args)
+            .args(&args)
             .output()
             .unwrap();
-        assert!(!output.status.success());
+        assert!(!output.status.success(), "{args:?}");
         sanitized(&output);
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"], "forbidden", "{args:?}: {error}");
         assert_eq!(
-            serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"],
-            "forbidden"
+            error["status"],
+            Value::Null,
+            "CLI must deny before an HTTP response"
         );
+        assert!(output.stdout.is_empty());
     }
-    assert_eq!(server.requests().len(), 2);
+    assert!(server.requests().is_empty());
 }

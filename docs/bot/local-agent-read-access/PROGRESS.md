@@ -22,7 +22,7 @@ repo: ishizakahiroshi/deskly。PR base: develop。指示branch: handoff/dots-rea
 | 送信・受付 | 手元Codex/dots | received | 固定7453e5cのREADME/REVIEWを全文確認。専用branchで開始 |
 | C1 公開基盤・認証契約 | dots | checkpoint | AUTH_CONTRACT.md確定。README/CLAUDE/AGENTS・Cargo licenseを整合。基盤core 389 pass |
 | C2 読取連携・合成テスト | dots | synthetic checks passed | Core 402、Rust 91 pass。独立review/CI/実機とは別 |
-| C3 独立レビュー・PR | dots別reviewer | pending | この実装checkpointのimmutable SHAを別担当へ提出予定。未レビュー/PR未作成 |
+| C3 独立レビュー・PR | dots別reviewer | review fixes | d199017でP2 CLI派生操作の抜けを指摘。修正後SHAで再レビュー/CI待ち |
 | 本番設定・Windows手元検収 | 手元担当 | pending | PRレビュー後。dotsの完了と区別 |
 
 ## 証跡の区別
@@ -68,3 +68,10 @@ Toolchain実測: Node v24.19.0、pnpm 11.19.0、rustc 1.90.0、cargo 1.90.0。co
 - 検査環境: Node 24.19.0/pnpm 11.19.0/Rust 1.90.0。Rustは専用target、jobs=2、incremental無効、dev/test debug=0。環境や秘密の設定は変更していない。
 - 未実施: Python full checks（PR CIで確認予定）、独立code review、GitHub CI、ライブAccess claim/失効、Windows AI/MCP、本人ブラウザ、配備/復元。手元KB/family台帳なしの構造秘密検査と、手元台帳込み最終検査は別。
 - 切戻し: 配備設定の機械mappingを削除/[]にすれば次要求からscopeなし。コードはレビュー済み前版へ戻す。schema/data migrationなし。本人owner設定と旧Python配置を維持する。本番操作は手元担当のみ。
+
+2026-10-03 09:57 UTC / 独立review指摘修正:
+- レビュー対象: d1990179764584130d6f2bec46535ef13e92b52c（tree c13a88a8deb0abe3d2b324d75d3ccb4ebe83975c、remote readback済み）。別担当が合成APIで再現したP2: CLI my-work/entry showは許可されたproject/item readだけから派生結果を作れた。許可案件0件ではsearch/countsも成功し得た。scope外データの漏洩は観測されていないが、明示拒否契約違反。
+- 修正: Access CLIの許可をprojects/itemsのlist/detailとMCPだけに限定し、それ以外はHTTP・ローカルファイル/Git処理の前に固定forbiddenで拒否。新しいcommandも既定拒否。server側のscope/preview拒否は維持。
+- changed paths: Rust client.rs（静的エラー）、main.rs（command allowlist）、tests/access.rs（13個のCLI負例でHTTP 0件。raw Clientのwrite/entryは引き続きserver 403を確認）、利用説明/契約/看板。
+- cargo test --manifest-path rust/Cargo.toml --all --locked exit 0（92 pass、0 fail/ignore）。cargo clippy --manifest-path rust/Cargo.toml --all-targets --locked -- -D warnings exit 0。cargo fmt --manifest-path rust/Cargo.toml --all -- --check exit 0。Core sourceはC2から変更なし。
+- この修正commitのimmutable SHAで独立再レビューを依頼する。旧SHAの検査結果を承認として引き継がない。Draft PR/CI/実機検収はまだ未完了。

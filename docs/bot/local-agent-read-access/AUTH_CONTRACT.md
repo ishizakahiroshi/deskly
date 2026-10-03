@@ -30,7 +30,7 @@ Project/WorkItem管理項目の既存型を維持し、担当は安定IDのま�
 
 既存Bearer設定を維持し、Access設定は明示JSON configのaccess_client_id / access_client_secret、または専用DESKLY_ACCESS_CLIENT_ID / DESKLY_ACCESS_CLIENT_SECRET。argvオプションを作らない。両方式同時、片側だけ、空値、不正header値を拒否し、暗黙fallbackしない。Access環境変数を一つでも指定したら環境変数の完全なペアが必要で、configと混ぜて補完しない。Bearerが別の設定源に残っていてもAccessとの競合として拒否する。
 
-HTTPはredirect禁止、proxy無効、静的error、応答内のClient ID/Secret/Bearer反射拒否を維持する。MCPの `mcp --read-only` 起動ではdeskly_projects / deskly_itemsのみ広告・実行可。Access認証時はこのmodeを自動強制する。広告外toolへの直接tools/callも拒否する。最終的な権限境界はサーバーが持つ。
+HTTPはredirect禁止、proxy無効、静的error、応答内のClient ID/Secret/Bearer反射拒否を維持する。MCPの `mcp --read-only` 起動ではdeskly_projects / deskly_itemsのみ広告・実行可。Access認証時はこのmodeを自動強制する。広告外toolへの直接tools/callも拒否する。CLIもAccess認証ではprojects/itemsのlist/detailとMCPだけを許可し、my-work/entry/search/counts等の派生読取も通信・ローカル処理前に拒否する。最終的なデータ権限境界はサーバーが持つ。
 
 ## 検収境界
 

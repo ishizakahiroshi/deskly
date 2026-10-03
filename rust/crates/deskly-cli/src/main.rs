@@ -703,6 +703,22 @@ fn resource(
 }
 fn run(cli: Cli) -> Result<Option<Value>, Error> {
     let client = Client::load(cli.config.as_deref())?;
+    // Some legacy commands derive aggregates from otherwise permitted reads.
+    // Fail closed before any network or local work, including future commands.
+    if client.uses_access()
+        && !matches!(
+            &cli.command,
+            Command::Projects(Resource {
+                action: Action::List | Action::Detail { .. },
+                ..
+            }) | Command::Items(Resource {
+                action: Action::List | Action::Detail { .. },
+                ..
+            }) | Command::Mcp { .. }
+        )
+    {
+        return Err(Error::read_only());
+    }
     if let Command::Mcp { read_only } = cli.command {
         // One-shot CLI never constructs or enters a Tokio runtime.
         tokio::runtime::Builder::new_current_thread()

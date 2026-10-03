@@ -23,6 +23,13 @@ impl Error {
             "入力を確認してください（ID・版・必須の欄）",
         )
     }
+    pub fn read_only() -> Self {
+        Self::new(
+            "forbidden",
+            None,
+            "読み取り専用認証では案件・作業の一覧と詳細だけを利用できます",
+        )
+    }
     pub fn transport() -> Self {
         Self::new(
             "transport_error",

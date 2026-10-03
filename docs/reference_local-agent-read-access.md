@@ -45,7 +45,7 @@ deskly --config <private-client.json> --workspace <workspace-uuid> --json items 
 deskly --config <private-client.json> mcp --read-only
 ```
 
-MCP read-onlyモードは `deskly_projects` と `deskly_items` だけを広告・実行します。Access認証ならflagなしでもこのモードを強制します。非広告toolの直接tools/callを拒否します。CLIのwrite/entryその他コマンドを使ってもサーバー側のscopeは増えません。redirectは追わず、proxyは無効、レスポンス/エラーに認証値が含まれる場合は静的エラーへ閉じます。設定の診断で秘密やpathを反射しません。
+MCP read-onlyモードは `deskly_projects` と `deskly_items` だけを広告・実行します。Access認証ならflagなしでもこのモードを強制します。非広告toolの直接tools/callを拒否します。Access認証のCLIもprojects/itemsのlist/detailとMCP以外を、通信やローカル処理の前に拒否します。許可readだけから派生できるmy-work/entry/search/countsも例外にしません。API直呼びのwrite/preview等もサーバー側で拒否します。redirectは追わず、proxyは無効、レスポンス/エラーに認証値が含まれる場合は静的エラーへ閉じます。設定の診断で秘密やpathを反射しません。
 
 ## 手元確認・失効・切戻し
 
