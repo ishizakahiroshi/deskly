@@ -14,9 +14,26 @@
 
 ## Status
 
-The current source tree contains stages 1–3: the contact ledger and import, CLI and MCP, read-only case and worklog projections, and an authenticated dashboard. The working tree also has an experimental, personal workspace for projects and work items; it has only been exercised with synthetic data and has not been released. As checked on 2026-09-27, the [GitHub Releases page](https://github.com/ishizakahiroshi/deskly/releases) listed no published releases, and the [PyPI project JSON endpoint](https://pypi.org/pypi/deskly/json) returned HTTP 404. These are dated observations and may change.
+The `develop` integration candidate contains two implementations. The existing Python contact-ledger CLI, MCP and deployment under `deskly/` and `deploy/` are retained. The next-version workspace implementation is `core/` (TypeScript API, UI, SQLite/D1 adapters), `rust/` (CLI and stdio MCP), and the canonical `schema/`. `deploy/cloudflare-next/` is the separate owner-only Cloudflare deployment candidate.
 
-The personal dashboard binds only to `127.0.0.1`. The working tree also contains a separate shared Web entrypoint with per-account credentials and revocable cookie sessions. This shared implementation has not been accepted with two real user accounts and two projects. Live issuepost and many-ai-time connections, phone acceptance, tailnet access, and company acceptance have not been verified.
+The next-version API uses stable workspace/project/item IDs and retains versioned preview/save, history, archive and restore contracts. Cloudflare owner access validates Access JWTs at both the personal boundary and inner API, then checks actual memberships in the service. Machine read access is being implemented separately for explicitly allowed projects; it does not grant owner/member rights. See the [read-access contract](docs/bot/local-agent-read-access/AUTH_CONTRACT.md) and [progress](docs/bot/local-agent-read-access/PROGRESS.md) for tested scope and remaining acceptance.
+
+These are source-tree candidates, not a production release or a completed migration. Live Access claims, revocation, Windows AI/MCP, owner browser flows and personal deployment/recovery need separate operator acceptance. Company data and credentials are outside this work. The legacy Python localhost dashboard still binds to `127.0.0.1`; its setup instructions below are specific to that implementation.
+
+## Next-version development
+
+Requires Node >=22, pnpm, and Rust >=1.88 (the dependency lock may require a newer supported toolchain; this integration is verified with Rust 1.90). Start from the repository root:
+
+```text
+pnpm --dir core install --frozen-lockfile
+pnpm --dir core run typecheck
+pnpm --dir core run test
+cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path rust/Cargo.toml --all
+```
+
+The frozen schema generates TypeScript and Rust types; do not change it for authentication scopes. Existing Bearer-authenticated adapters remain supported. The next-version CLI reads only explicitly chosen JSON config or dedicated environment variables, never the legacy home automatically. See [Cloudflare deployment](deploy/cloudflare-next/README.md) and [migration boundary](docs/reference_personal-migration.md); running tests does not authorize or perform deployment.
 
 ## Contact ledger CLI and MCP
 
@@ -31,7 +48,7 @@ The human-readable output is a summary. Add `--json` to either command to receiv
 
 The MCP server provides the same read access. `list_contacts(limit=100, offset=0)` returns one page with the total count and `next_offset`. `search_contacts(query, limit=20, offset=0)` keeps its list response and accepts an offset for later matches. Page offsets are calculated from the ledger state at each call, so writes between calls can shift later pages.
 
-These CLI and MCP commands use the local contact ledgers; they do not authenticate a member of the shared workspace. Deskly rejects the local-owner CLI commands and MCP server startup when the shared Web runtime is configured or `DESKLY_HOME` contains the shared credential database or setup lock. A shared CLI/MCP HTTPS login and scoped workspace API are still to be implemented.
+These CLI and MCP commands use the local contact ledgers; they do not authenticate a member of the shared workspace. Deskly rejects the local-owner CLI commands and MCP server startup when the shared Web runtime is configured or `DESKLY_HOME` contains the shared credential database or setup lock. The separate next-version Rust CLI/MCP and scoped workspace API are described above; these Python commands do not become that client.
 
 ## Development
 
