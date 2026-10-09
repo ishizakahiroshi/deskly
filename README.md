@@ -4,6 +4,8 @@
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
+The [grand design](docs/design_deskly-grand-design.html) is the maintained source for the product goal, overall architecture, tool responsibilities, and future work. It describes the intended product; the status below describes this source tree. The design is kept in this repository so it can be reviewed alongside implementation changes.
+
 ## What it does
 
 - **One ledger for contacts.** Each contact has a state from a fixed vocabulary (`下書き` draft / `送信済み` sent / `回答待ち` waiting for reply / `対応中` in progress / `完了` done / `送らない` not sent), a case reference, a due date, and a draft body. Every change is recorded.
