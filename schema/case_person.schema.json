@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/case_person.schema.json",
+  "title": "CasePerson",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "case_number": {
+      "$ref": "case.schema.json#/$defs/number"
+    },
+    "reporter_ref": {
+      "$ref": "case.schema.json#/$defs/ref"
+    },
+    "added_by": {
+      "$ref": "case.schema.json#/$defs/actor"
+    },
+    "created_at": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "case_number",
+    "reporter_ref",
+    "added_by",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "description": "Another person who hit the same case. One row per (case, reporter_ref); sending the same person again adds nothing."
+}

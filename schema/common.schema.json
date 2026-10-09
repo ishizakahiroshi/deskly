@@ -1,0 +1,656 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/common.schema.json",
+  "title": "DesklyCommon",
+  "description": "Shared schema definitions. JSON Schema is the contract source of truth; no runtime HTTP or storage implementation is supplied.",
+  "$defs": {
+    "stable_id": {
+      "title": "StableId",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Canonical lowercase UUID; stable across renames, exports and restores. Never a display name or email."
+    },
+    "nullable_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "optional_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        {
+          "const": ""
+        }
+      ],
+      "description": "Python uses an empty string for an absent optional relationship."
+    },
+    "contact_id": {
+      "title": "ContactId",
+      "type": "string",
+      "pattern": "^c-[0-9]{8}-[0-9a-f]{8}$",
+      "description": "Legacy contact identifier; retained unchanged, never recast as a UUID."
+    },
+    "contact_state": {
+      "title": "ContactState",
+      "type": "string",
+      "enum": [
+        "下書き",
+        "送信済み",
+        "回答待ち",
+        "対応中",
+        "完了",
+        "送らない"
+      ]
+    },
+    "project_state": {
+      "title": "ProjectState",
+      "type": "string",
+      "enum": [
+        "未確認",
+        "進行中",
+        "保留",
+        "終了"
+      ]
+    },
+    "item_state": {
+      "title": "ItemState",
+      "type": "string",
+      "enum": [
+        "未確認",
+        "進行中",
+        "待ち",
+        "完了",
+        "保留"
+      ]
+    },
+    "work_kind": {
+      "title": "WorkKind",
+      "type": "string",
+      "enum": [
+        "開発",
+        "営業",
+        "運営"
+      ]
+    },
+    "workspace_role": {
+      "title": "WorkspaceRole",
+      "type": "string",
+      "enum": [
+        "owner",
+        "member"
+      ],
+      "description": "owner manages the workspace. member confers no project or source access by itself."
+    },
+    "project_role": {
+      "title": "ProjectRole",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "editor",
+        "viewer",
+        null
+      ],
+      "description": "Project-scoped grant; null is the retained, versioned revoked grant. Workspace owners need no grant."
+    },
+    "role": {
+      "title": "EffectiveRole",
+      "type": "string",
+      "enum": [
+        "owner",
+        "editor",
+        "viewer"
+      ],
+      "description": "Effective authorization vocabulary. owner is workspace-wide; editor and viewer are project grants, not workspace membership roles."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Persisted optimistic concurrency version; JSON booleans are not integers."
+    },
+    "text": {
+      "type": "string"
+    },
+    "short_text": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+    },
+    "required_short_text": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+      "minLength": 1
+    },
+    "long_text": {
+      "type": "string",
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+    },
+    "required_long_text": {
+      "type": "string",
+      "maxLength": 500,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 240,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+      "minLength": 1
+    },
+    "optional_date": {
+      "anyOf": [
+        {
+          "const": ""
+        },
+        {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      ],
+      "description": "Empty or canonical YYYY-MM-DD; evaluated in workspace timezone, never UTC midnight."
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$",
+      "description": "UTC RFC 3339 timestamp. Current Python writes second precision."
+    },
+    "nullable_utc_timestamp": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/utc_timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "description": "IANA timezone identifier, also allowing UTC. Service must validate against the timezone database."
+    },
+    "json_value": {
+      "title": "JsonValue",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/json_value"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/json_value"
+          }
+        }
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Exact trusted issuer. Service rejects userinfo, query and fragment."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\u0000-\\u001f]+$",
+          "description": "Opaque issuer-scoped subject; not necessarily UUID. Never match identity by display name or email."
+        }
+      },
+      "required": [
+        "issuer",
+        "subject"
+      ],
+      "additionalProperties": false
+    },
+    "entity_metadata": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/nullable_id"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "project",
+            "milestone",
+            "work_item",
+            "source",
+            "reference",
+            "observation"
+          ]
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/version"
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "workspace_id",
+        "project_id",
+        "type",
+        "version",
+        "archived"
+      ],
+      "additionalProperties": false,
+      "description": "Shared Python entities table envelope. Referenced property-by-property to keep each entity closed."
+    },
+    "field_change": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Top-level English snake_case field in the normalized snapshot."
+        },
+        "before_present": {
+          "type": "boolean"
+        },
+        "after_present": {
+          "type": "boolean"
+        },
+        "before": {
+          "$ref": "common.schema.json#/$defs/json_value"
+        },
+        "after": {
+          "$ref": "common.schema.json#/$defs/json_value"
+        }
+      },
+      "required": [
+        "field",
+        "before_present",
+        "after_present",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false,
+      "description": "Derived from complete snapshots, not a second writable history. Presence flags distinguish absent keys from JSON null.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "before_present": {
+                "const": false
+              }
+            },
+            "required": [
+              "before_present"
+            ]
+          },
+          "then": {
+            "properties": {
+              "before": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "after_present": {
+                "const": false
+              }
+            },
+            "required": [
+              "after_present"
+            ]
+          },
+          "then": {
+            "properties": {
+              "after": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/id"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/workspace_id"
+        },
+        "project_id": {
+          "type": "null"
+        },
+        "type": {
+          "const": "source"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/version"
+        },
+        "archived": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/archived"
+        },
+        "label": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "adapter": {
+          "enum": [
+            "contact",
+            "external_case"
+          ]
+        },
+        "binding": {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "description": "Logical connection setting name, never a connection URL, token or filesystem path."
+        }
+      },
+      "required": [
+        "id",
+        "workspace_id",
+        "project_id",
+        "type",
+        "version",
+        "archived",
+        "label",
+        "adapter",
+        "binding"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "adapter": {
+                "const": "external_case"
+              }
+            },
+            "required": [
+              "adapter"
+            ]
+          },
+          "then": {
+            "properties": {
+              "binding": {
+                "const": "issuepost"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/id"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/workspace_id"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "type": {
+          "const": "reference"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/version"
+        },
+        "archived": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/archived"
+        },
+        "kind": {
+          "enum": [
+            "md",
+            "https",
+            "contact",
+            "external_case"
+          ]
+        },
+        "target": {
+          "$ref": "common.schema.json#/$defs/required_long_text"
+        },
+        "label": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "linked_id": {
+          "$ref": "common.schema.json#/$defs/optional_id"
+        },
+        "source_id": {
+          "$ref": "common.schema.json#/$defs/optional_id"
+        }
+      },
+      "required": [
+        "id",
+        "workspace_id",
+        "project_id",
+        "type",
+        "version",
+        "archived",
+        "kind",
+        "target",
+        "label",
+        "linked_id",
+        "source_id"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "contact",
+                  "external_case"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "source_id": {
+                "$ref": "common.schema.json#/$defs/stable_id"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "md",
+                  "https"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "source_id": {
+                "const": ""
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "contact"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "$ref": "common.schema.json#/$defs/contact_id"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/id"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/workspace_id"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "type": {
+          "const": "observation"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/version"
+        },
+        "archived": {
+          "$ref": "common.schema.json#/$defs/entity_metadata/properties/archived"
+        },
+        "reference_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "status": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "last_attempt_at_utc": {
+          "$ref": "common.schema.json#/$defs/utc_timestamp"
+        },
+        "last_success_at_utc": {
+          "$ref": "common.schema.json#/$defs/nullable_utc_timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "workspace_id",
+        "project_id",
+        "type",
+        "version",
+        "archived",
+        "reference_id",
+        "status",
+        "last_attempt_at_utc",
+        "last_success_at_utc"
+      ],
+      "additionalProperties": false,
+      "description": "Fetch metadata only. External source bodies and credentials are never copied into workspace history. Status vocabulary is owned by the source adapter."
+    },
+    "access_snapshot": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "name": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "role": {
+          "enum": [
+            "owner",
+            "member",
+            "editor",
+            "viewer",
+            null
+          ]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/version"
+        },
+        "issuer": {
+          "$ref": "common.schema.json#/$defs/identity/properties/issuer"
+        },
+        "subject": {
+          "$ref": "common.schema.json#/$defs/identity/properties/subject"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "source_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "transferred": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "credential_revoked": {
+          "const": true
+        },
+        "credential_state": {
+          "enum": [
+            "checked",
+            "inactive"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "Owner-only access-history snapshot. Python boolean integers are normalized to JSON booleans. Identity metadata is permission-sensitive, never credential material."
+    }
+  }
+}

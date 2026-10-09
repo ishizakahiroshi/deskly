@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/case_reply.schema.json",
+  "title": "CaseReply",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "case_number": {
+      "$ref": "case.schema.json#/$defs/number"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Append order within one case, starting at 1."
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50000,
+      "description": "Reply text stored exactly as received."
+    },
+    "author": {
+      "$ref": "case.schema.json#/$defs/actor"
+    },
+    "author_ref": {
+      "$ref": "case.schema.json#/$defs/nullable_ref"
+    },
+    "created_at": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    },
+    "delivered_at": {
+      "$ref": "common.schema.json#/$defs/nullable_utc_timestamp"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "case_number",
+    "seq",
+    "body",
+    "author",
+    "author_ref",
+    "created_at",
+    "delivered_at"
+  ],
+  "additionalProperties": false,
+  "description": "What was returned to the reporter. created_at is when the ledger saved it; delivered_at is when it reached the person (null until then). Saving is not delivery."
+}

@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/event.schema.json",
+  "title": "Event",
+  "description": "Append-only normalized workspace/access audit record. Complete before/after snapshots remain authoritative; changes is a derived per-field view. Serialization does not confer access to hidden project/source or identity data.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/entity_event"
+    },
+    {
+      "$ref": "#/$defs/access_event"
+    }
+  ],
+  "$defs": {
+    "entity_event": {
+      "title": "EntityEvent",
+      "type": "object",
+      "properties": {
+        "event_kind": {
+          "const": "entity"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/audit_fields/properties/operation_id"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/audit_fields/properties/workspace_id"
+        },
+        "requester_member_id": {
+          "$ref": "#/$defs/audit_fields/properties/requester_member_id"
+        },
+        "route": {
+          "$ref": "#/$defs/audit_fields/properties/route"
+        },
+        "executor_kind": {
+          "$ref": "#/$defs/audit_fields/properties/executor_kind"
+        },
+        "executor_ref": {
+          "$ref": "#/$defs/audit_fields/properties/executor_ref"
+        },
+        "executor_verified": {
+          "$ref": "#/$defs/audit_fields/properties/executor_verified"
+        },
+        "reason": {
+          "$ref": "#/$defs/audit_fields/properties/reason"
+        },
+        "at_utc": {
+          "$ref": "#/$defs/audit_fields/properties/at_utc"
+        },
+        "before": {
+          "$ref": "#/$defs/entity_before"
+        },
+        "after": {
+          "$ref": "#/$defs/entity_snapshot"
+        },
+        "changes": {
+          "$ref": "#/$defs/audit_fields/properties/changes"
+        },
+        "request_hash": {
+          "$ref": "#/$defs/audit_fields/properties/request_hash"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/audit_fields/properties/entity_id"
+        },
+        "member_id": {
+          "$ref": "#/$defs/audit_fields/properties/member_id"
+        }
+      },
+      "required": [
+        "event_kind",
+        "operation_id",
+        "workspace_id",
+        "requester_member_id",
+        "route",
+        "executor_kind",
+        "executor_ref",
+        "executor_verified",
+        "reason",
+        "at_utc",
+        "before",
+        "after",
+        "changes",
+        "entity_id",
+        "member_id"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "$ref": "#/$defs/unknown_executor"
+      },
+      "then": {
+        "$ref": "#/$defs/unknown_executor_values"
+      },
+      "else": {
+        "$ref": "#/$defs/known_executor_constraints"
+      }
+    },
+    "access_event": {
+      "title": "AccessEvent",
+      "type": "object",
+      "properties": {
+        "event_kind": {
+          "const": "access"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/audit_fields/properties/operation_id"
+        },
+        "workspace_id": {
+          "$ref": "#/$defs/audit_fields/properties/workspace_id"
+        },
+        "requester_member_id": {
+          "$ref": "#/$defs/audit_fields/properties/requester_member_id"
+        },
+        "route": {
+          "$ref": "#/$defs/audit_fields/properties/route"
+        },
+        "executor_kind": {
+          "$ref": "#/$defs/audit_fields/properties/executor_kind"
+        },
+        "executor_ref": {
+          "$ref": "#/$defs/audit_fields/properties/executor_ref"
+        },
+        "executor_verified": {
+          "$ref": "#/$defs/audit_fields/properties/executor_verified"
+        },
+        "reason": {
+          "$ref": "#/$defs/audit_fields/properties/reason"
+        },
+        "at_utc": {
+          "$ref": "#/$defs/audit_fields/properties/at_utc"
+        },
+        "before": {
+          "$ref": "#/$defs/access_before"
+        },
+        "after": {
+          "$ref": "common.schema.json#/$defs/access_snapshot"
+        },
+        "changes": {
+          "$ref": "#/$defs/audit_fields/properties/changes"
+        },
+        "request_hash": {
+          "$ref": "#/$defs/audit_fields/properties/request_hash"
+        },
+        "actor_member_id": {
+          "$ref": "#/$defs/audit_fields/properties/actor_member_id"
+        },
+        "target_type": {
+          "$ref": "#/$defs/audit_fields/properties/target_type"
+        },
+        "target_id": {
+          "$ref": "#/$defs/audit_fields/properties/target_id"
+        }
+      },
+      "required": [
+        "event_kind",
+        "operation_id",
+        "workspace_id",
+        "requester_member_id",
+        "route",
+        "executor_kind",
+        "executor_ref",
+        "executor_verified",
+        "reason",
+        "at_utc",
+        "before",
+        "after",
+        "changes",
+        "actor_member_id",
+        "target_type",
+        "target_id"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "$ref": "#/$defs/unknown_executor"
+      },
+      "then": {
+        "$ref": "#/$defs/unknown_executor_values"
+      },
+      "else": {
+        "$ref": "#/$defs/known_executor_constraints"
+      }
+    },
+    "audit_fields": {
+      "type": "object",
+      "description": "Single definitions for normalized audit fields; branch schemas reference these properties and are closed independently.",
+      "properties": {
+        "operation_id": {
+          "$ref": "common.schema.json#/$defs/stable_id",
+          "description": "Stable operation/event identifier used for idempotency. Same operation plus same caller and payload replays; mismatches conflict."
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "entity_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "actor_member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "target_type": {
+          "enum": [
+            "identity",
+            "member",
+            "project_role",
+            "source_access",
+            "member_credentials"
+          ]
+        },
+        "target_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "requester_member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id",
+          "description": "Authenticated human requester. Server resolved, not accepted from a caller-supplied actor label."
+        },
+        "route": {
+          "$ref": "common.schema.json#/$defs/required_short_text",
+          "description": "Server-selected execution route. Route alone never proves the identity of an AI executor."
+        },
+        "executor_kind": {
+          "enum": [
+            "unknown",
+            "human",
+            "ai",
+            "service"
+          ],
+          "description": "Current Python emits unknown. Other values are reserved for independently verified transports; they must not be inferred from route or claimed by clients."
+        },
+        "executor_ref": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/required_long_text"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Non-secret executor identity reference, only when evidence exists; otherwise null."
+        },
+        "executor_verified": {
+          "type": "boolean",
+          "description": "Whether executor identity was verified separately from the human requester. Current and migrated Python rows normalize 0 to false."
+        },
+        "reason": {
+          "$ref": "common.schema.json#/$defs/reason"
+        },
+        "at_utc": {
+          "$ref": "common.schema.json#/$defs/utc_timestamp"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/field_change"
+          },
+          "description": "Deterministic top-level diff of before/after snapshots. Include every changed field, sorted by field; creation has before_present=false. Computed on serialization, not editable."
+        },
+        "request_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "readOnly": true,
+          "description": "Optional internal idempotency digest retained for faithful trusted export. Existing history responses omit it; it is not an authentication token."
+        }
+      }
+    },
+    "unknown_executor": {
+      "type": "object",
+      "properties": {
+        "executor_kind": {
+          "const": "unknown"
+        }
+      },
+      "required": [
+        "executor_kind"
+      ]
+    },
+    "unknown_executor_values": {
+      "type": "object",
+      "properties": {
+        "executor_ref": {
+          "type": "null"
+        },
+        "executor_verified": {
+          "const": false
+        }
+      }
+    },
+    "known_executor_constraints": {
+      "type": "object",
+      "if": {
+        "properties": {
+          "executor_verified": {
+            "const": true
+          }
+        },
+        "required": [
+          "executor_verified"
+        ]
+      },
+      "then": {
+        "properties": {
+          "executor_ref": {
+            "$ref": "common.schema.json#/$defs/required_long_text"
+          },
+          "executor_kind": {
+            "enum": [
+              "human",
+              "ai",
+              "service"
+            ]
+          }
+        }
+      }
+    },
+    "snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/entity_snapshot"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/access_snapshot"
+        }
+      ]
+    },
+    "entity_snapshot": {
+      "anyOf": [
+        {
+          "$ref": "project.schema.json"
+        },
+        {
+          "$ref": "milestone.schema.json"
+        },
+        {
+          "$ref": "work_item.schema.json"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/source"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/reference"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/observation"
+        }
+      ]
+    },
+    "entity_before": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/entity_snapshot"
+        }
+      ]
+    },
+    "access_before": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "common.schema.json#/$defs/access_snapshot"
+        }
+      ]
+    }
+  }
+}

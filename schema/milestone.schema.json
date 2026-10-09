@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/milestone.schema.json",
+  "title": "Milestone",
+  "description": "Normalized Python workspace entity. All persisted data fields are required; optional projections are read-only and must not be sent as mutable data.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/id"
+    },
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/workspace_id"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "type": {
+      "const": "milestone"
+    },
+    "version": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/version"
+    },
+    "archived": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/archived"
+    },
+    "goal": {
+      "$ref": "#/$defs/data/properties/goal"
+    },
+    "acceptance": {
+      "$ref": "#/$defs/data/properties/acceptance"
+    },
+    "assignee_id": {
+      "$ref": "#/$defs/data/properties/assignee_id"
+    },
+    "check_date": {
+      "$ref": "#/$defs/data/properties/check_date"
+    },
+    "state": {
+      "$ref": "#/$defs/data/properties/state"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "project_id",
+    "type",
+    "version",
+    "archived",
+    "goal",
+    "acceptance",
+    "assignee_id",
+    "check_date",
+    "state"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "acceptance": {
+          "$ref": "common.schema.json#/$defs/required_long_text"
+        },
+        "assignee_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "check_date": {
+          "$ref": "common.schema.json#/$defs/optional_date"
+        },
+        "state": {
+          "$ref": "common.schema.json#/$defs/item_state"
+        }
+      },
+      "required": [
+        "goal",
+        "acceptance",
+        "assignee_id",
+        "check_date",
+        "state"
+      ],
+      "additionalProperties": false,
+      "description": "Exact mutable FIELDS[\"milestone\"] from workspace_service.py. Creation/update submit the complete object; empty optional fields remain present."
+    }
+  }
+}

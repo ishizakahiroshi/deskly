@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/case_member_scope_event.schema.json",
+  "title": "CaseMemberScopeEvent",
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Append order within one workspace, starting at 1."
+    },
+    "member_id": {
+      "$ref": "common.schema.json#/$defs/stable_id",
+      "description": "The member whose case scope changed."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "grant",
+        "change",
+        "revoke"
+      ]
+    },
+    "actor_member_id": {
+      "$ref": "common.schema.json#/$defs/stable_id",
+      "description": "The workspace owner who made the change, resolved by the server."
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/reason"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "at_utc": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "$ref": "case_member_scope.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "after": {
+      "$ref": "case_member_scope.schema.json"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "seq",
+    "member_id",
+    "action",
+    "actor_member_id",
+    "reason",
+    "at_utc",
+    "before",
+    "after"
+  ],
+  "additionalProperties": false,
+  "description": "Append-only history of case scope grants, changes and revocations: who, when, and the scope before and after. Never overwritten or deleted."
+}

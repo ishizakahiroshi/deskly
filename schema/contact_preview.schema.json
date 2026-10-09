@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/contact_preview.schema.json",
+  "title": "ContactActionPreview",
+  "type": "object",
+  "properties": {
+    "request": {
+      "$ref": "contact_command.schema.json"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "$ref": "contact_record.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "after": {
+      "$ref": "contact_record.schema.json"
+    },
+    "preview_token": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "request",
+    "before",
+    "after",
+    "preview_token"
+  ],
+  "additionalProperties": false
+}

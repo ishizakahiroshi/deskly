@@ -1,0 +1,64 @@
+# Sending-app settings example. Every name, address and hash here is a
+# placeholder; none of them is written in code. Copy this file and replace them.
+#
+# [[apps]] is the shape every receiving service shares: who may connect.
+# [[scopes]] belongs to the case ledger: what each app may see. They join by name.
+# Unknown keys, a missing key, an [[apps]] entry without its [[scopes]] entry
+# (or the reverse), more than two keys, a source/tenant that is not an array
+# and an invalid address range all stop startup with an error.
+# The same shape is accepted as JSON: {"apps": [...], "scopes": [...]}.
+#
+# keys_sha256 holds the lowercase hex SHA-256 of each token, never the token.
+# Make tokens long and random (at least 32 characters; shorter ones are refused),
+# for example 32 random bytes as hex, and hash the exact token text, e.g.
+#   node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" <token>
+# Two hashes may be listed at once so a token can be replaced without downtime:
+# add the new hash, switch the app to the new token, then remove the old hash.
+#
+# envs: the deployment environments (DESKLY_APP_ENVIRONMENT / APP_ENVIRONMENT)
+# in which the keys are accepted. Use separate apps and keys for production
+# and staging.
+# allow_ips: CIDR ranges (IPv4 or IPv6) the app may connect from; a bare address
+# is one host. To allow any address, write ["0.0.0.0/0", "::/0"] explicitly.
+
+[[apps]]
+name        = "app_one"
+keys_sha256 = ["0000000000000000000000000000000000000000000000000000000000000001"]
+envs        = ["production"]
+allow_ips   = ["127.0.0.1", "192.0.2.0/24"]
+
+[[apps]]
+name        = "app_two"
+keys_sha256 = ["0000000000000000000000000000000000000000000000000000000000000002",
+               "0000000000000000000000000000000000000000000000000000000000000003"]
+envs        = ["production"]
+allow_ips   = ["203.0.113.0/24", "2001:db8::/32"]
+
+[[apps]]
+# Sees every app and every tenant: operators only. It cannot create cases
+# (a new case needs exactly one source) and is the only app given the
+# per-source breakdown of the panels.
+name        = "operator_console"
+keys_sha256 = ["0000000000000000000000000000000000000000000000000000000000000004"]
+envs        = ["production"]
+allow_ips   = ["127.0.0.1"]
+
+# workspace_id: the Deskly workspace whose cases the app reads and writes.
+# source and tenant are always arrays; ["*"] means all.
+[[scopes]]
+app          = "app_one"
+workspace_id = "00000000-0000-0000-0000-000000000001"
+source       = ["app_one"]
+tenant       = ["tenant_a"]
+
+[[scopes]]
+app          = "app_two"
+workspace_id = "00000000-0000-0000-0000-000000000001"
+source       = ["app_two"]
+tenant       = ["*"]        # an app not divided by customer
+
+[[scopes]]
+app          = "operator_console"
+workspace_id = "00000000-0000-0000-0000-000000000001"
+source       = ["*"]
+tenant       = ["*"]

@@ -1,0 +1,4649 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "deskly contract foundation",
+    "version": "0.1.0",
+    "summary": "Versioned resource contract for deskly-owned work and permission-filtered shared reads",
+    "description": "Issue #5 contract foundation only. This file specifies a proposed /api/v1 transport boundary; it does not implement or claim deployment of these HTTP routes. Existing Python /api/workspaces routes and service return shapes remain unchanged. An implementation must add the explicit projections and field mappings described here and pass authorization/concurrency/history acceptance before shared use. The sibling JSON Schemas are the source of truth for the eight entity models. The API exposes read-only workspace/account/contact/event projections, two-phase commands for project/milestone/work_item, and owner-only project/source grants. There are no external-service writes, contact sending, credential enrollment, owner bootstrap, arbitrary file reads, cross-workspace joins, hard deletes, import/export or account administration routes. Workspace, project, source and member UUIDs are stable identity keys; display names, contact project strings, connection URLs and filesystem paths never establish identity or authorization. A valid shared session is resolved by exact issuer/subject to an active workspace member on every scoped request. Owners inherit workspace-wide access; project owner_id is only the business assignee. All mutations reject unknown fields, including client actor/requester/executor assertions. Authorization and optimistic concurrency are service-layer checks in addition to JSON Schema validation. Calendar dates use workspace timezone; history timestamps are UTC. Contract-only additions are intentionally distinguishable from the current Python wire format."
+  },
+  "x-implementation-status": "contract-only",
+  "x-python-reference": {
+    "model": [
+      "deskly/model.py",
+      "deskly/workspace_model.py",
+      "deskly/workspace_store.py"
+    ],
+    "commands": "deskly/workspace_service.py:WorkspaceService.preview/apply",
+    "grants": "deskly/workspace_access.py:WorkspaceAccess.set_project_role/set_source_access",
+    "authentication": "deskly/shared_auth.py:SharedSessions",
+    "transport-field-map": {
+      "expected_version": "WorkspaceService command.version"
+    },
+    "projection-notes": [
+      "Entity resources omit dashboard-only aggregate properties.",
+      "Workspace/account/membership/event projections add explicit schema scope and normalization without changing Python persistence.",
+      "Event projection derives changes from stored before/after and normalizes executor_verified to boolean; it never verifies an unknown executor.",
+      "HTTP handlers, transport adapters, authentication enrollment and deployments are outside this issue."
+    ]
+  },
+  "security": [
+    {
+      "SharedSession": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "workspaces",
+      "description": "Read-only, explicitly initialized workspace metadata"
+    },
+    {
+      "name": "projects",
+      "description": "deskly-owned project resources"
+    },
+    {
+      "name": "milestones",
+      "description": "deskly-owned goals and acceptance criteria"
+    },
+    {
+      "name": "work_items",
+      "description": "deskly-owned development, sales and operations work"
+    },
+    {
+      "name": "contacts",
+      "description": "Read-only authorized projections of legacy contact ledgers"
+    },
+    {
+      "name": "events",
+      "description": "Append-only service-authored history, read-only through this API"
+    },
+    {
+      "name": "accounts",
+      "description": "Self-only account projection without credentials"
+    },
+    {
+      "name": "memberships",
+      "description": "Workspace membership and versioned project/source grants"
+    },
+    {
+      "name": "commands",
+      "description": "Preview before confirmation, then authorized transactional apply"
+    },
+    {
+      "name": "contact_ledger",
+      "description": "Owner-only contact reads."
+    },
+    {
+      "name": "contact_commands",
+      "description": "Owner-only approved contact writes."
+    },
+    {
+      "name": "current_project_roles",
+      "description": "Current authenticated caller roles."
+    },
+    {
+      "name": "cases",
+      "description": "Received cases (display name configurable). Ledger-issued numbers, configured identifiers, append-only history; never deleted."
+    }
+  ],
+  "paths": {
+    "/api/v1/workspaces/{workspace_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "getWorkspace",
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Read an initialized workspace",
+        "description": "Read-only workspace metadata for an active member with verified identity. GET never initializes a workspace, creates an owner, upgrades storage, or enables sharing.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/me": {
+      "parameters": [],
+      "get": {
+        "operationId": "getCurrentAccount",
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Read the current account projection",
+        "description": "Self-only credential-free projection of the account resolved from the current shared session. subject is an authentication identity, not a workspace member ID. Login name or display name never resolves membership; the server uses exact issuer/subject binding. No account creation, identity enrollment, credential rotation, owner bootstrap, or other account writes are exposed.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "listProjects",
+        "tags": [
+          "projects"
+        ],
+        "summary": "List visible active and archived projects",
+        "description": "Return only workspace-owner or explicitly granted projects. Authorization is applied before enumeration, ordering and any derived count. Archived projects appear only in archived_projects so an authorized client can preview restoration; a business owner_id does not grant workspace-owner privileges.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        }
+      ],
+      "get": {
+        "operationId": "getProject",
+        "tags": [
+          "projects"
+        ],
+        "summary": "Read one active project",
+        "description": "Require current workspace-owner, project-editor or project-viewer access. Missing, archived or unauthorized projects return 404. The resource projection excludes dashboard aggregates, linked contact bodies, source connection settings and credentials.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/milestones": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        }
+      ],
+      "get": {
+        "operationId": "listMilestones",
+        "tags": [
+          "milestones"
+        ],
+        "summary": "List project milestones",
+        "description": "Require read access to an active parent project. Include archived milestone rows with their archived flag for explicit restoration workflows; filter within the selected workspace and project.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestoneCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/milestones/{milestone_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        },
+        {
+          "$ref": "#/components/parameters/milestone_id"
+        }
+      ],
+      "get": {
+        "operationId": "getMilestone",
+        "tags": [
+          "milestones"
+        ],
+        "summary": "Read one project milestone",
+        "description": "Require current project read access and exact workspace/project parent match. A milestone from another project is not returned even if its UUID is known. The active parent project is required.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Milestone"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/work-items": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        }
+      ],
+      "get": {
+        "operationId": "listWorkItems",
+        "tags": [
+          "work_items"
+        ],
+        "summary": "List project work items",
+        "description": "Require read access to an active parent project. Include archived work-item rows with their archived flag. A linked milestone is optional but, when present, must belong to this same project and workspace.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/work-items/{work_item_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        },
+        {
+          "$ref": "#/components/parameters/work_item_id"
+        }
+      ],
+      "get": {
+        "operationId": "getWorkItem",
+        "tags": [
+          "work_items"
+        ],
+        "summary": "Read one project work item",
+        "description": "Require current project read access and exact workspace/project parent match. The active parent project is required. This endpoint reads deskly-owned work and does not write to an external service.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/sources/{source_id}/contacts/{contact_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        },
+        {
+          "$ref": "#/components/parameters/contact_id"
+        }
+      ],
+      "get": {
+        "operationId": "getLinkedContact",
+        "tags": [
+          "contacts"
+        ],
+        "summary": "Read an explicitly linked, non-sensitive contact",
+        "description": "Require both project read permission and source-use permission, and an existing owner-created explicit link for (workspace_id, source_id, contact_id). Read the authoritative contact ledger only. A contact with any nonempty sensitive value is entirely suppressed before projection, including its existence and sensitivity status, and returns the same 404 as an absent/inaccessible record. The body may be shown only in this individually authorized detail response. Never copy the contact body into workspace entities, events, exports, backups, caches or general lists. No contact mutations or sending are exposed; source credentials, import paths, hashes and arbitrary extra fields are never returned.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedContact"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/events": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        }
+      ],
+      "get": {
+        "operationId": "listProjectEvents",
+        "tags": [
+          "events"
+        ],
+        "summary": "Read permission-filtered project history",
+        "description": "Require the same current project read permission as project detail and an active parent project. Filter reference and observation events using current source access; inspect both before and after snapshots. Return normalized history with immutable typed snapshots, field changes and server-derived requester/executor attribution. Raw integer executor_verified is projected as a boolean. No event insert, edit or delete operation exists. Every authorized entity/grant write appends history in the same database transaction; current Web/CLI executor identity remains unknown and unverified.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/memberships": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "listMemberships",
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Read workspace members and stored grants",
+        "description": "Owner-only administration projection. Workspace membership has role owner or member; project membership has editor, viewer or null; source membership has allowed. Workspace-owner access is inherited over all projects and sources and is never represented by an assignable project owner role. Same-name accounts/members are not merged, inactive members receive no access, and revoked grant rows retain their version. Identity binding is optional owner-only metadata; credential material is never returned.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}/memberships/{member_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/project_id"
+        },
+        {
+          "$ref": "#/components/parameters/member_id"
+        }
+      ],
+      "put": {
+        "operationId": "setProjectMembership",
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Grant, change or revoke a project role",
+        "description": "Explicit, owner-authorized access change using WorkspaceAccess.set_project_role semantics. This PUT directly applies the supplied grant decision; it does not claim to be an entity-command preview. The authenticated actor, current owner status, target member and project are rechecked inside the write transaction. An exact operation_id replay by the same principal with the same canonical payload returns the original result after authorization is rechecked; different input/principal returns 409. The request and resulting immutable access event commit together. A future HTTP adapter adds scope=project and workspace_id to the safe service result.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMembership"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProjectRoleRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/memberships/{member_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        },
+        {
+          "$ref": "#/components/parameters/member_id"
+        }
+      ],
+      "put": {
+        "operationId": "setSourceMembership",
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Grant or revoke source use",
+        "description": "Explicit, owner-authorized access change using WorkspaceAccess.set_source_access semantics. This grants read access to a registered source, independently of project permission, and never writes to the source itself. Validate active source and active non-owner member in this workspace. Recheck owner access and expected_version in the same transaction as the change and immutable access event. Exact operation_id/input/principal replay returns the original result; changed input or principal returns 409. A future HTTP adapter adds scope=source and workspace_id to the safe service result.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceMembership"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSourceAccessRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/commands/preview": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "post": {
+        "operationId": "previewCommand",
+        "tags": [
+          "commands"
+        ],
+        "summary": "Preview a first-party create, update, archive or restore",
+        "description": "Validate and normalize one project, milestone or work-item command; return exact before/after snapshots and a principal/route-bound token without saving entities or history. Project creation is workspace-owner only; other commands require workspace-owner or project-editor access. Assignees must be active members with access to this project; a work-item milestone must be active in this project. State values and mutable fields come from the authoritative entity schemas, reflecting current Python behavior rather than aspirational design prose. Repeated create previews with id=null may produce different normalized IDs; retain and apply one exact returned preview. The preview is for review and does not itself authorize or perform a write. The future transport adapter maps expected_version to the existing Python request.version and reverses this mapping on its response; it must use the exact same mapping on apply.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/commands/apply": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "post": {
+        "operationId": "applyCommand",
+        "tags": [
+          "commands"
+        ],
+        "summary": "Apply the exact confirmed preview",
+        "description": "After the user confirms the diff, submit the complete unchanged preview. Verify its HMAC, server-resolved principal and execution route, then recheck authorization, entity/parent scope, expected_version and exact before/after snapshots. Permission revocation or a stale preview cannot be bypassed by a previously obtained token. Compare-and-update and immutable event insertion are one transaction; failed checks do not commit either. For entity-command operation_id replay, the same normalized request and same principal return the original committed entity after current write authorization is rechecked, without a second write/event. Changed input or another principal returns 409 operation_conflict. Archive and restore increment versions and append events; there is no hard-delete operation. Entity IDs are normalized and validated; timestamps, requester_member_id, route and executor attribution are server-controlled. The adapter reverses expected_version to Python request.version before validating the service-issued token. No MCP apply flag, client actor field, legacy whole-ledger Bearer token or single personal password substitutes for authentication and authorization.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-and-resource-authorized",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandPreview"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/contacts": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        }
+      ],
+      "get": {
+        "operationId": "listContacts",
+        "tags": [
+          "contact_ledger"
+        ],
+        "summary": "List owner-only contacts",
+        "description": "Require current persisted workspace-owner access. Full private records, ordered by created_at then id. State filters are ORed; project and search are ANDed. Contact.project is an exact legacy display string, never an authorization key. Search uses the Python fields and Unicode case folding.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "description": "Repeat to select one or more of the six states.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/contact_state"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "description": "Exact legacy project string, including empty for unassigned.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Nonblank substring in project, recipient, channel, promise, agreement, basis, note or body.",
+            "schema": {
+              "type": "string",
+              "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/contacts/{contact_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        },
+        {
+          "$ref": "#/components/parameters/ledger_contact_id"
+        }
+      ],
+      "get": {
+        "operationId": "getContact",
+        "tags": [
+          "contact_ledger"
+        ],
+        "summary": "Read one owner-only contact",
+        "description": "Owner-only complete contact. Project editor/viewer and source grants do not authorize this route.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/contacts/{contact_id}/history": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        },
+        {
+          "$ref": "#/components/parameters/ledger_contact_id"
+        }
+      ],
+      "get": {
+        "operationId": "getContactHistory",
+        "tags": [
+          "contact_ledger"
+        ],
+        "summary": "Read private contact history",
+        "description": "Owner-only append-only contact events. Never mixed into project events; contains field changes, actor and timestamps.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/contacts/{contact_id}/body": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        },
+        {
+          "$ref": "#/components/parameters/ledger_contact_id"
+        }
+      ],
+      "get": {
+        "operationId": "exportContactBody",
+        "tags": [
+          "contact_ledger"
+        ],
+        "summary": "Export contact body",
+        "description": "Owner-only read returning the unmodified body, equivalent to Python export_text. This does not send a message or write a file.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactBody"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/waiting": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        }
+      ],
+      "get": {
+        "operationId": "getContactWaiting",
+        "tags": [
+          "contact_ledger"
+        ],
+        "summary": "List whose turn by legacy project",
+        "description": "Owner-only Python build_waiting_rows parity. One row per trimmed legacy project; each unassigned contact has its own row. Default open states 下書き/回答待ち/対応中; any 下書き/対応中 makes こちら, otherwise 相手, or null for closed-only rows. Earliest valid active due date; sort by turn, overdue, due, case-folded project and contact reference. No issuepost or many-ai-time connection.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactWaitingCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "parameters": [
+          {
+            "name": "include_all",
+            "in": "query",
+            "required": false,
+            "description": "Include closed contacts.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "include_summaries",
+            "in": "query",
+            "required": false,
+            "description": "Include first nonblank body lines or source filename stems.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "today",
+            "in": "query",
+            "required": false,
+            "description": "Default is the current calendar day in the workspace timezone.",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/contacts/commands/preview": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        }
+      ],
+      "post": {
+        "operationId": "previewContactCommand",
+        "tags": [
+          "contact_commands"
+        ],
+        "summary": "Preview contact ledger change",
+        "description": "Owner-only add_draft, set_state or record_reply. Preview is read-only; apply verifies the exact principal/source/route-bound signed preview, version and operation ID in the same transaction as contact and private history. Never retry a conflict with changed data without fresh approval. Same-state no-op changes no version, timestamp or history; its replay requires that version still be current.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactActionPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactActionCommand"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}/contacts/commands/apply": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/source_id"
+        }
+      ],
+      "post": {
+        "operationId": "applyContactCommand",
+        "tags": [
+          "contact_commands"
+        ],
+        "summary": "Apply contact ledger change",
+        "description": "Owner-only add_draft, set_state or record_reply. Preview is read-only; apply verifies the exact principal/source/route-bound signed preview, version and operation ID in the same transaction as contact and private history. Never retry a conflict with changed data without fresh approval. Same-state no-op changes no version, timestamp or history; its replay requires that version still be current.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactActionPreview"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/project-roles/me": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "getCurrentProjectRoles",
+        "tags": [
+          "current_project_roles"
+        ],
+        "summary": "Read my effective project roles",
+        "description": "Return only the authenticated member_id and their accessible project IDs with effective owner/editor/viewer roles. Persisted membership is authoritative. No target member parameter is accepted; query parameters are rejected. No other identities, grants, source settings or contact fields are returned.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-self",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentProjectRoles"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "listCases",
+        "tags": [
+          "cases"
+        ],
+        "summary": "List cases in scope",
+        "description": "Every case inside the caller scope. Open cases (configured open statuses) whose hold_until is today or earlier, or whose promised_due is before today (UTC), come first; each group keeps created_at, source and seq order. evidence_missing is true for a case in a configured terminal status without any case_links row. Both are derived on read and never stored. Query parameters are rejected. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCase",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Receive one case",
+        "description": "Receive one case from a sending app. source is fixed by the app scope and never read from the body; the scope must name exactly one source. tenant_ref may be omitted when the scope names exactly one tenant (that tenant is stored) or [\"*\"] (null is stored); otherwise it must be one of the scope tenants. kind must be a configured kind. status and approval_state are set by the ledger from the settings. The ledger issues <source>-<seq> from a per-source sequence inside the same transaction as the case and its first history event. A repeated (source, legacy_ref) returns the existing number without a second case. Titles longer than the limit are rejected, never truncated. Nothing is stored and no number exists unless the response is 200. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCaseRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/panels": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "getCasePanels",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Count the case panels in scope",
+        "description": "The four panels over the cases inside the caller scope whose status is in the configured open set, without any period cut: overdue (promised_due before today, UTC), waiting (by the configured waiting map, not by status), screens (by screen_id) and kinds (every configured kind). by_source, the per-source breakdown, is returned only to an operator: a workspace owner or an app whose sources and tenants are both [\"*\"]; for every other caller the key is absent. Query parameters are rejected. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasePanels"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/settings": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "getCaseSettings",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Read the case settings for the screen",
+        "description": "The validated case settings the ledger was started with: kinds (and which require approval), statuses with their open/terminal split, initial value and waiting map, approval states with initial, initial_free and hold, display labels per language and source display names. Stored values are identifiers; a screen shows labels[language][identifier] and falls back to the identifier itself only when the language or the label is missing. Read-only and identical for every call until the ledger restarts. Only a persisted active workspace owner may read it: a sending app is denied (403) even when its scope is [\"*\"], and project editors/viewers and plain members are denied (403). Query parameters are rejected. Without settings or case storage the response is 404 cases_not_enabled. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before. A member given a case scope (while member access is enabled) may read it too; numbering.display_names then lists only the sources in that scope.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/member-scopes": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "listCaseMemberScopes",
+        "tags": [
+          "cases"
+        ],
+        "summary": "List the case scopes given to members, with their history",
+        "description": "Every case scope in the workspace (revoked ones are kept with role null) ordered by member_id, and the append-only history of grants, changes and revocations (who, when, before and after) ordered by seq. Only a persisted active workspace owner may read it; members (including those with a case scope) and sending apps are denied (403). Query parameters are rejected. Disabled by default: unless the case settings say [member_access] enabled = true (an operator decision that needs the organization's consent, applied by editing the settings and restarting), the response is 404 member_access_not_enabled. Without case settings or case storage the response is 404 cases_not_enabled.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseMemberScopeCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/member-scopes/me": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        }
+      ],
+      "get": {
+        "operationId": "getMyCaseMemberScope",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Read the caller's own case scope",
+        "description": "The case scope given to the authenticated member. A member without an active case scope (never granted or revoked), and a workspace owner (who needs none), get 404 not_found. No member can read another member's scope here. Sending apps are denied (403). Query parameters are rejected. Disabled by default: unless the case settings say [member_access] enabled = true (an operator decision that needs the organization's consent, applied by editing the settings and restarting), the response is 404 member_access_not_enabled. Without case settings or case storage the response is 404 cases_not_enabled.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "authenticated-self",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseMemberScope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/member-scopes/{member_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/member_id"
+        }
+      ],
+      "put": {
+        "operationId": "setCaseMemberScope",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Grant, change or revoke a member's case scope",
+        "description": "Owner-only. role viewer or editor grants or changes the scope (sources and tenants required, numbers optional); role null revokes it, keeping the row with empty lists so the revision never goes back. expected_revision is 0 only when the member has no scope row yet, otherwise the exact stored revision (409 version_conflict otherwise, nothing written). The target must be an active member of the same workspace whose workspace role is member (403 invalid_member for owners, inactive or unknown members); a revocation also accepts an inactive member. Every effective change appends one history event in the same transaction; an identical request writes nothing. A revocation applies to the member's very next request, without a restart. Disabled by default: unless the case settings say [member_access] enabled = true (an operator decision that needs the organization's consent, applied by editing the settings and restarting), the response is 404 member_access_not_enabled. Without case settings or case storage the response is 404 cases_not_enabled.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner",
+        "responses": {
+          "200": {
+            "description": "Authorized result. The scope and its history event are committed before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseMemberScope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCaseMemberScopeRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/{number}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/case_number"
+        }
+      ],
+      "get": {
+        "operationId": "getCase",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Read one case",
+        "description": "One case with its people, replies, links and append-only events. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCase",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Change status, approval or deadlines",
+        "description": "Change status, approval_state, promised_due and/or hold_until. expected_revision must equal the current revision or the request fails with 409 version_conflict and nothing is written. Every effective change appends exactly one case event; an unchanged request writes nothing. closed_at is set by the ledger when status enters a configured terminal status and cleared when it leaves. hold_until is allowed only while approval_state is the configured hold state. Kinds that do not require approval keep the configured initial_free approval state. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before. A member whose case scope is viewer cannot write (403); an editor scope may.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchCaseRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/{number}/people": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/case_number"
+        }
+      ],
+      "post": {
+        "operationId": "addCasePerson",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Add a person who hit the same case",
+        "description": "Adds one reporter_ref. Sending the same reporter_ref again returns the existing row and adds nothing. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before. A member whose case scope is viewer cannot write (403); an editor scope may.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasePerson"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCasePersonRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/{number}/replies": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/case_number"
+        }
+      ],
+      "post": {
+        "operationId": "addCaseReply",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Record a reply to the reporter",
+        "description": "Appends one reply. created_at is when the ledger saved it; delivered_at (UTC, optional) is when it reached the person. Saving is not delivery. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before. A member whose case scope is viewer cannot write (403); an editor scope may.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCaseReplyRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}/cases/{number}/links": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspace_id"
+        },
+        {
+          "$ref": "#/components/parameters/case_number"
+        }
+      ],
+      "post": {
+        "operationId": "addCaseLink",
+        "tags": [
+          "cases"
+        ],
+        "summary": "Attach a commit, document or URL",
+        "description": "Unique by (case, link_type, ref): sending the same link again returns the existing row and adds nothing. commit refs are lowercase hexadecimal hashes; url refs are http(s) URLs. Callers are either a persisted active workspace owner (sees every case in the workspace) or an authenticated sending app whose configured scope lists sources and tenants ([\"*\"] means all). Cases outside the caller scope are indistinguishable from absent ones (404) for reads and writes. Project editors/viewers and plain members are denied (403). A sending app authenticates with Authorization: Bearer <token> (AppBearer); such a server-to-server request is exempt from the browser Origin and Sec-Fetch-Site checks only when the token authenticates an app, and any other request failing them is 403. When member access is enabled in the case settings ([member_access] enabled = true; disabled by default), a workspace member given a case scope (PUT /cases/member-scopes/{member_id}) also sees the cases matching that scope: sources and tenants as for an app, narrowed to the listed numbers when any are listed. Outside the scope the response is the same 404. Members without a case scope are denied (403) as before. A member whose case scope is viewer cannot write (403); an editor scope may.",
+        "x-implementation-status": "contract-only",
+        "x-required-access": "workspace-owner-or-app-scope",
+        "responses": {
+          "200": {
+            "description": "Authorized result. No side effects for reads or previews; writes are committed with their history event before returning.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseLink"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCaseLinkRequest"
+              }
+            }
+          }
+        },
+        "x-origin-checks": [
+          "Host",
+          "Origin",
+          "Sec-Fetch-Site"
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "SharedSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "deskly_shared_session",
+        "description": "Opaque existing shared-Web session cookie, issued outside this contract. Secure, HttpOnly, SameSite=Strict; current Python TTL is 30 minutes. Check account active/revision and session expiry on every request, then exact issuer/subject binding and active workspace member where scoped. Password changes/account deactivation revoke existing sessions on their next request; inactive workspace members are denied even if credential revocation is pending. Mutations require valid Host, Origin and Sec-Fetch-Site checks and strict JSON parsing/size/field validation. No credential creation or login route is specified. Legacy whole-ledger Bearer tokens and personal-loopback passwords are not valid shared identities."
+      },
+      "AppBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Sending-app token, accepted only on case routes and only when no member is authenticated. The server stores only its SHA-256, checks the deployment environment and the client address, and answers every failure with the same 401."
+      }
+    },
+    "parameters": {
+      "workspace_id": {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "description": "Stable workspace UUID. Every entity, parent and membership must belong to this workspace.",
+        "schema": {
+          "$ref": "./common.schema.json#/$defs/stable_id"
+        }
+      },
+      "project_id": {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "description": "Stable project UUID within the selected workspace; display names and Contact.project are never authority or join keys.",
+        "schema": {
+          "$ref": "./common.schema.json#/$defs/stable_id"
+        }
+      },
+      "milestone_id": {
+        "name": "milestone_id",
+        "in": "path",
+        "required": true,
+        "description": "Stable milestone UUID belonging to the selected project and workspace.",
+        "schema": {
+          "$ref": "./common.schema.json#/$defs/stable_id"
+        }
+      },
+      "work_item_id": {
+        "name": "work_item_id",
+        "in": "path",
+        "required": true,
+        "description": "Stable work-item UUID belonging to the selected project and workspace.",
+        "schema": {
+          "$ref": "./common.schema.json#/$defs/stable_id"
+        }
+      },
+      "source_id": {
+        "name": "source_id",
+        "in": "path",
+        "required": true,
+        "description": "Stable registered source UUID within the workspace; never a URL, token, local path or mutable connection name.",
+        "schema": {
+          "$ref": "./common.schema.json#/$defs/stable_id"
+        }
+      },
+      "member_id": {
+        "name": "member_id",
+        "in": "path",
+        "required": true,
+        "description": "Target member UUID within the workspace. This selects a grant recipient and cannot assert the caller identity.",
+        "schema": {
+          "$ref": "./common.schema.json#/$defs/stable_id"
+        }
+      },
+      "contact_id": {
+        "name": "contact_id",
+        "in": "path",
+        "required": true,
+        "description": "Legacy contact ID, unique only together with workspace_id and source_id. The contact must already be explicitly linked to this project.",
+        "schema": {
+          "$ref": "./contact.schema.json#/properties/id"
+        }
+      },
+      "ledger_contact_id": {
+        "name": "contact_id",
+        "in": "path",
+        "required": true,
+        "description": "Legacy contact ID scoped to this workspace and registered contact source; no project link required.",
+        "schema": {
+          "$ref": "./contact.schema.json#/properties/id"
+        }
+      },
+      "case_number": {
+        "name": "number",
+        "in": "path",
+        "required": true,
+        "description": "Ledger-issued case number <source>-<seq>. Unique within the workspace.",
+        "schema": {
+          "$ref": "./case.schema.json#/$defs/number"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed JSON, unknown fields, wrong types, invalid ID/date/state, missing required fields or invalid grant. Validation failure makes no changes.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing, expired, revoked or invalid shared session or unresolved issuer/subject identity. No response reveals account existence or credentials.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated account/member is inactive, owner-only action is denied, assignment is invalid, or the preview is not bound to this principal and route.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Workspace/target is absent or inaccessible. Project permission failures and hidden or sensitive contacts are indistinguishable from absence; no existence information is returned.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Optimistic concurrency or operation conflict: stale expected_version, changed preview, reused operation_id with different input/principal, duplicate ID, invalid archive state, unfinished assignments, or sharing not enabled. No write or new event is committed. Keep unsaved input, reread only authorized current data, create a new preview and obtain fresh confirmation before retrying a changed operation. Never silently overwrite, automatically choose the latest version, or discard user edits.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Conflict"
+            },
+            "examples": {
+              "staleVersion": {
+                "value": {
+                  "error": "version_conflict"
+                }
+              },
+              "reusedOperation": {
+                "value": {
+                  "error": "operation_conflict"
+                }
+              },
+              "stalePreview": {
+                "value": {
+                  "error": "stale_preview"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Workspace": {
+        "$ref": "./workspace.schema.json"
+      },
+      "Project": {
+        "$ref": "./project.schema.json"
+      },
+      "Milestone": {
+        "$ref": "./milestone.schema.json"
+      },
+      "WorkItem": {
+        "$ref": "./work_item.schema.json"
+      },
+      "SharedContact": {
+        "$ref": "./contact.schema.json#/$defs/sharedContact"
+      },
+      "Event": {
+        "$ref": "./event.schema.json"
+      },
+      "Account": {
+        "$ref": "./account.schema.json"
+      },
+      "Membership": {
+        "$ref": "./membership.schema.json"
+      },
+      "ProjectMembership": {
+        "$ref": "./membership.schema.json#/$defs/projectMembership"
+      },
+      "SourceMembership": {
+        "$ref": "./membership.schema.json#/$defs/sourceMembership"
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Stable, non-sensitive error code. No credentials, hidden resource details, or personal filesystem paths."
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Conflict": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "version_conflict",
+              "operation_conflict",
+              "stale_preview",
+              "duplicate_id",
+              "archived",
+              "assigned_work_remaining",
+              "sharing_not_enabled",
+              "invalid_project"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ProjectCollection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          },
+          "archived_projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          }
+        },
+        "required": [
+          "projects",
+          "archived_projects"
+        ],
+        "description": "Only authorized projects. Active and archived rows are separated as in WorkspaceService.projects; dashboard-only summary fields are omitted."
+      },
+      "MilestoneCollection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Milestone"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "WorkItemCollection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkItem"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "EventCollection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "description": "Chronological, permission-filtered, immutable events. Snapshot bodies contain first-party records only, never linked contact bodies or credentials."
+      },
+      "MembershipCollection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Membership"
+            }
+          }
+        },
+        "required": [
+          "memberships"
+        ],
+        "description": "Owner-only view of workspace members and stored project/source grants, including versioned revocation tombstones. Does not infer a project owner grant."
+      },
+      "CreateProjectCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "create"
+          },
+          "type": {
+            "type": "string",
+            "const": "project"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "$ref": "./common.schema.json#/$defs/stable_id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "type": "null"
+          },
+          "expected_version": {
+            "type": "null",
+            "description": "Creation has no prior version. Null corresponds to the Python command version=null; zero is invalid here."
+          },
+          "data": {
+            "$ref": "./project.schema.json#/$defs/data"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Create one project. Owner-only. The preview may generate an ID when id=null. Reuse the normalized request returned in that preview. data is the complete mutable-field object, not a merge patch. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "CreateProjectPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CreateProjectCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "type": "null"
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "const": 1
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "UpdateProjectCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "update"
+          },
+          "type": {
+            "type": "string",
+            "const": "project"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "type": "null"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "$ref": "./project.schema.json#/$defs/data"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Update one project. Requires current workspace-owner or project-editor access. data is the complete mutable-field object, not a merge patch. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "UpdateProjectPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateProjectCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "ArchiveProjectCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "archive"
+          },
+          "type": {
+            "type": "string",
+            "const": "project"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "type": "null"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "type": "null"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Archive one project. Requires current workspace-owner or project-editor access. data must be null; the service preserves and revalidates existing mutable fields. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "ArchiveProjectPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ArchiveProjectCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": true
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "RestoreProjectCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "restore"
+          },
+          "type": {
+            "type": "string",
+            "const": "project"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "type": "null"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "type": "null"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Restore one project. Requires current workspace-owner or project-editor access. data must be null; the service preserves and revalidates existing mutable fields. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "RestoreProjectPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RestoreProjectCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": true
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Project"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "CreateMilestoneCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "create"
+          },
+          "type": {
+            "type": "string",
+            "const": "milestone"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "$ref": "./common.schema.json#/$defs/stable_id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "type": "null",
+            "description": "Creation has no prior version. Null corresponds to the Python command version=null; zero is invalid here."
+          },
+          "data": {
+            "$ref": "./milestone.schema.json#/$defs/data"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Create one milestone. Requires current workspace-owner or project-editor access. The preview may generate an ID when id=null. Reuse the normalized request returned in that preview. data is the complete mutable-field object, not a merge patch. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "CreateMilestonePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CreateMilestoneCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "type": "null"
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "const": 1
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "UpdateMilestoneCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "update"
+          },
+          "type": {
+            "type": "string",
+            "const": "milestone"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "$ref": "./milestone.schema.json#/$defs/data"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Update one milestone. Requires current workspace-owner or project-editor access. data is the complete mutable-field object, not a merge patch. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "UpdateMilestonePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMilestoneCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "ArchiveMilestoneCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "archive"
+          },
+          "type": {
+            "type": "string",
+            "const": "milestone"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "type": "null"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Archive one milestone. Requires current workspace-owner or project-editor access. data must be null; the service preserves and revalidates existing mutable fields. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "ArchiveMilestonePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ArchiveMilestoneCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": true
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "RestoreMilestoneCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "restore"
+          },
+          "type": {
+            "type": "string",
+            "const": "milestone"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "type": "null"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Restore one milestone. Requires current workspace-owner or project-editor access. data must be null; the service preserves and revalidates existing mutable fields. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "RestoreMilestonePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RestoreMilestoneCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": true
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Milestone"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "CreateWorkItemCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "create"
+          },
+          "type": {
+            "type": "string",
+            "const": "work_item"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "$ref": "./common.schema.json#/$defs/stable_id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "type": "null",
+            "description": "Creation has no prior version. Null corresponds to the Python command version=null; zero is invalid here."
+          },
+          "data": {
+            "$ref": "./work_item.schema.json#/$defs/data"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Create one work_item. Requires current workspace-owner or project-editor access. The preview may generate an ID when id=null. Reuse the normalized request returned in that preview. data is the complete mutable-field object, not a merge patch. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "CreateWorkItemPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CreateWorkItemCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "type": "null"
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "const": 1
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "UpdateWorkItemCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "update"
+          },
+          "type": {
+            "type": "string",
+            "const": "work_item"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "$ref": "./work_item.schema.json#/$defs/data"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Update one work_item. Requires current workspace-owner or project-editor access. data is the complete mutable-field object, not a merge patch. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "UpdateWorkItemPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateWorkItemCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "ArchiveWorkItemCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "archive"
+          },
+          "type": {
+            "type": "string",
+            "const": "work_item"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "type": "null"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Archive one work_item. Requires current workspace-owner or project-editor access. data must be null; the service preserves and revalidates existing mutable fields. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "ArchiveWorkItemPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ArchiveWorkItemCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": true
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "RestoreWorkItemCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id",
+            "description": "Client-generated stable operation UUID, retained when applying or replaying this exact preview."
+          },
+          "action": {
+            "type": "string",
+            "const": "restore"
+          },
+          "type": {
+            "type": "string",
+            "const": "work_item"
+          },
+          "id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "project_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "$ref": "./common.schema.json#/$defs/version",
+            "description": "Previously read entity version, integer >= 1. Maps to the existing Python command field version. Stale values return HTTP 409."
+          },
+          "data": {
+            "type": "null"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "action",
+          "type",
+          "id",
+          "project_id",
+          "expected_version",
+          "data",
+          "reason"
+        ],
+        "description": "Restore one work_item. Requires current workspace-owner or project-editor access. data must be null; the service preserves and revalidates existing mutable fields. Actor, requester, member identity, route and executor are never accepted from the client."
+      },
+      "RestoreWorkItemPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RestoreWorkItemCommand"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "./common.schema.json#/$defs/stable_id"
+                  }
+                }
+              }
+            ]
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": true
+                  }
+                }
+              }
+            ]
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "archived": {
+                    "const": false
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 2
+                  }
+                }
+              }
+            ]
+          },
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Opaque server HMAC over the normalized request, before/after snapshots, authenticated member and execution route. Never create, edit, log or interpret this token client-side."
+          }
+        },
+        "required": [
+          "request",
+          "before",
+          "after",
+          "preview_token"
+        ],
+        "description": "Exact preview response and apply input. It is bound to the authenticated principal and execution route. The service checks target IDs, workspace/project consistency, snapshot equality, current permissions and versions in addition to JSON Schema validation. For non-create operations before.version must equal request.expected_version and after.version must be one greater. Return this object unchanged to apply; it is not a reusable authorization credential."
+      },
+      "CommandRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/CreateProjectCommand"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateProjectCommand"
+          },
+          {
+            "$ref": "#/components/schemas/ArchiveProjectCommand"
+          },
+          {
+            "$ref": "#/components/schemas/RestoreProjectCommand"
+          },
+          {
+            "$ref": "#/components/schemas/CreateMilestoneCommand"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateMilestoneCommand"
+          },
+          {
+            "$ref": "#/components/schemas/ArchiveMilestoneCommand"
+          },
+          {
+            "$ref": "#/components/schemas/RestoreMilestoneCommand"
+          },
+          {
+            "$ref": "#/components/schemas/CreateWorkItemCommand"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateWorkItemCommand"
+          },
+          {
+            "$ref": "#/components/schemas/ArchiveWorkItemCommand"
+          },
+          {
+            "$ref": "#/components/schemas/RestoreWorkItemCommand"
+          }
+        ],
+        "description": "Closed, discriminated contract for the three deskly-owned mutable resources. Contact, account, workspace, event, reference and source writes are intentionally absent from this command contract."
+      },
+      "CommandPreview": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/CreateProjectPreview"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateProjectPreview"
+          },
+          {
+            "$ref": "#/components/schemas/ArchiveProjectPreview"
+          },
+          {
+            "$ref": "#/components/schemas/RestoreProjectPreview"
+          },
+          {
+            "$ref": "#/components/schemas/CreateMilestonePreview"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateMilestonePreview"
+          },
+          {
+            "$ref": "#/components/schemas/ArchiveMilestonePreview"
+          },
+          {
+            "$ref": "#/components/schemas/RestoreMilestonePreview"
+          },
+          {
+            "$ref": "#/components/schemas/CreateWorkItemPreview"
+          },
+          {
+            "$ref": "#/components/schemas/UpdateWorkItemPreview"
+          },
+          {
+            "$ref": "#/components/schemas/ArchiveWorkItemPreview"
+          },
+          {
+            "$ref": "#/components/schemas/RestoreWorkItemPreview"
+          }
+        ],
+        "description": "Server-normalized request plus exact typed before/after snapshots and approval token. Preview has no persistence side effects; the user confirms this diff before apply."
+      },
+      "CommandResult": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Project"
+          },
+          {
+            "$ref": "#/components/schemas/Milestone"
+          },
+          {
+            "$ref": "#/components/schemas/WorkItem"
+          }
+        ],
+        "description": "Committed entity, or the original committed entity on an authorized idempotent replay. A replay does not imply that this historical result is the latest entity version."
+      },
+      "SetProjectRoleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0 only when no grant row exists; otherwise the exact stored grant version, including a revoked row. A successful write increments it by one."
+          },
+          "role": {
+            "$ref": "./membership.schema.json#/$defs/projectMembership/properties/role"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "expected_version",
+          "role",
+          "reason"
+        ],
+        "description": "Owner-only explicit grant or revocation. editor and viewer are assignable; null revokes an existing active grant while retaining its versioned row. owner is inherited from workspace membership and cannot be assigned here. Target member must be active, in the same workspace, and not a workspace owner. A downgrade to viewer or revocation fails with 409 assigned_work_remaining while unfinished work is assigned to the member. The target project must be active. No user-supplied actor identity is accepted.",
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "const": null
+                }
+              },
+              "required": [
+                "role"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "expected_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SetSourceAccessRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "./common.schema.json#/$defs/stable_id"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0 only when no source grant row exists; otherwise the exact stored version, including a revoked row."
+          },
+          "allowed": {
+            "$ref": "./membership.schema.json#/$defs/sourceMembership/properties/allowed"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "operation_id",
+          "expected_version",
+          "allowed",
+          "reason"
+        ],
+        "description": "Owner-only source-use grant or revocation for an active, non-owner member in the same workspace. allowed=false retains a versioned tombstone and requires an existing grant row. Source access never substitutes for project access and never authorizes an external-service write.",
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "allowed": {
+                  "const": false
+                }
+              },
+              "required": [
+                "allowed"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "expected_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ContactRecord": {
+        "$ref": "./contact_record.schema.json"
+      },
+      "ContactEvent": {
+        "$ref": "./contact_event.schema.json"
+      },
+      "ContactActionCommand": {
+        "$ref": "./contact_command.schema.json"
+      },
+      "ContactActionPreview": {
+        "$ref": "./contact_preview.schema.json"
+      },
+      "ContactWaitingRow": {
+        "$ref": "./contact_waiting.schema.json"
+      },
+      "CurrentProjectRoles": {
+        "$ref": "./project_roles.schema.json"
+      },
+      "ContactCollection": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContactRecord"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "ContactHistory": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContactEvent"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "additionalProperties": false
+      },
+      "ContactWaitingCollection": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContactWaitingRow"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "ContactBody": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "Case": {
+        "$ref": "./case.schema.json"
+      },
+      "CasePerson": {
+        "$ref": "./case_person.schema.json"
+      },
+      "CaseEvent": {
+        "$ref": "./case_event.schema.json"
+      },
+      "CaseReply": {
+        "$ref": "./case_reply.schema.json"
+      },
+      "CaseLink": {
+        "$ref": "./case_link.schema.json"
+      },
+      "CaseCollection": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseListItem"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "CaseListItem": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "$ref": "./case.schema.json#/properties/workspace_id"
+          },
+          "number": {
+            "$ref": "./case.schema.json#/properties/number"
+          },
+          "source": {
+            "$ref": "./case.schema.json#/properties/source"
+          },
+          "tenant_ref": {
+            "$ref": "./case.schema.json#/properties/tenant_ref"
+          },
+          "seq": {
+            "$ref": "./case.schema.json#/properties/seq"
+          },
+          "origin": {
+            "$ref": "./case.schema.json#/properties/origin"
+          },
+          "kind": {
+            "$ref": "./case.schema.json#/properties/kind"
+          },
+          "status": {
+            "$ref": "./case.schema.json#/properties/status"
+          },
+          "approval_state": {
+            "$ref": "./case.schema.json#/properties/approval_state"
+          },
+          "title": {
+            "$ref": "./case.schema.json#/properties/title"
+          },
+          "body": {
+            "$ref": "./case.schema.json#/properties/body"
+          },
+          "reporter_ref": {
+            "$ref": "./case.schema.json#/properties/reporter_ref"
+          },
+          "screen_id": {
+            "$ref": "./case.schema.json#/properties/screen_id"
+          },
+          "feature_id": {
+            "$ref": "./case.schema.json#/properties/feature_id"
+          },
+          "environment": {
+            "$ref": "./case.schema.json#/properties/environment"
+          },
+          "version": {
+            "$ref": "./case.schema.json#/properties/version"
+          },
+          "url": {
+            "$ref": "./case.schema.json#/properties/url"
+          },
+          "fingerprint": {
+            "$ref": "./case.schema.json#/properties/fingerprint"
+          },
+          "promised_due": {
+            "$ref": "./case.schema.json#/properties/promised_due"
+          },
+          "hold_until": {
+            "$ref": "./case.schema.json#/properties/hold_until"
+          },
+          "closed_at": {
+            "$ref": "./case.schema.json#/properties/closed_at"
+          },
+          "duplicate_of": {
+            "$ref": "./case.schema.json#/properties/duplicate_of"
+          },
+          "legacy_ref": {
+            "$ref": "./case.schema.json#/properties/legacy_ref"
+          },
+          "revision": {
+            "$ref": "./case.schema.json#/properties/revision"
+          },
+          "created_at": {
+            "$ref": "./case.schema.json#/properties/created_at"
+          },
+          "updated_at": {
+            "$ref": "./case.schema.json#/properties/updated_at"
+          },
+          "evidence_missing": {
+            "type": "boolean",
+            "description": "True for a case in a configured terminal status without any case_links row. Derived on read, never stored."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "number",
+          "source",
+          "tenant_ref",
+          "seq",
+          "origin",
+          "kind",
+          "status",
+          "approval_state",
+          "title",
+          "body",
+          "reporter_ref",
+          "screen_id",
+          "feature_id",
+          "environment",
+          "version",
+          "url",
+          "fingerprint",
+          "promised_due",
+          "hold_until",
+          "closed_at",
+          "duplicate_of",
+          "legacy_ref",
+          "revision",
+          "created_at",
+          "updated_at",
+          "evidence_missing"
+        ],
+        "additionalProperties": false,
+        "description": "One list row: every Case field unchanged plus marks derived on read."
+      },
+      "CaseWaitingCounts": {
+        "type": "object",
+        "properties": {
+          "us": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "them": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "none": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "us",
+          "them",
+          "none"
+        ],
+        "additionalProperties": false,
+        "description": "Open cases by the configured waiting value of their status."
+      },
+      "CaseKindCount": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "./case.schema.json#/$defs/identifier"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "kind",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "CaseScreenCount": {
+        "type": "object",
+        "properties": {
+          "screen_id": {
+            "$ref": "./case.schema.json#/properties/screen_id"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "screen_id",
+          "count"
+        ],
+        "additionalProperties": false,
+        "description": "screen_id null counts open cases sent without a screen."
+      },
+      "CaseSourcePanel": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "./case.schema.json#/$defs/source"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overdue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting": {
+            "$ref": "#/components/schemas/CaseWaitingCounts"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKindCount"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "open",
+          "overdue",
+          "waiting",
+          "kinds"
+        ],
+        "additionalProperties": false
+      },
+      "CasePanels": {
+        "type": "object",
+        "properties": {
+          "today": {
+            "$ref": "./case.schema.json#/$defs/date"
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overdue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting": {
+            "$ref": "#/components/schemas/CaseWaitingCounts"
+          },
+          "screens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseScreenCount"
+            }
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseKindCount"
+            }
+          },
+          "by_source": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseSourcePanel"
+            }
+          }
+        },
+        "required": [
+          "today",
+          "open",
+          "overdue",
+          "waiting",
+          "screens",
+          "kinds"
+        ],
+        "additionalProperties": false,
+        "description": "today is the UTC day counted on. Every panel counts the same population: open cases in the caller scope, without a period cut. screens are ordered by count (most first), then screen_id, with null last; kinds follow the settings order and include zeros. by_source (sorted by source) is present only for an operator."
+      },
+      "CaseDetail": {
+        "type": "object",
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CasePerson"
+            }
+          },
+          "replies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseReply"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseLink"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseEvent"
+            }
+          }
+        },
+        "required": [
+          "case",
+          "people",
+          "replies",
+          "links",
+          "events"
+        ],
+        "additionalProperties": false
+      },
+      "CaseSettings": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "array",
+                "items": {
+                  "$ref": "./case.schema.json#/$defs/identifier"
+                },
+                "minItems": 1
+              },
+              "requires_approval": {
+                "type": "array",
+                "items": {
+                  "$ref": "./case.schema.json#/$defs/identifier"
+                }
+              }
+            },
+            "required": [
+              "values",
+              "requires_approval"
+            ],
+            "additionalProperties": false
+          },
+          "statuses": {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "array",
+                "items": {
+                  "$ref": "./case.schema.json#/$defs/identifier"
+                },
+                "minItems": 1
+              },
+              "open": {
+                "type": "array",
+                "items": {
+                  "$ref": "./case.schema.json#/$defs/identifier"
+                },
+                "minItems": 1
+              },
+              "terminal": {
+                "type": "array",
+                "items": {
+                  "$ref": "./case.schema.json#/$defs/identifier"
+                },
+                "minItems": 1
+              },
+              "initial": {
+                "$ref": "./case.schema.json#/$defs/identifier"
+              },
+              "waiting": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "us",
+                    "them",
+                    "none"
+                  ]
+                },
+                "description": "Who a case in each status waits for. Keys are the status identifiers."
+              }
+            },
+            "required": [
+              "values",
+              "open",
+              "terminal",
+              "initial",
+              "waiting"
+            ],
+            "additionalProperties": false
+          },
+          "approval_states": {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "array",
+                "items": {
+                  "$ref": "./case.schema.json#/$defs/identifier"
+                },
+                "minItems": 1
+              },
+              "initial": {
+                "$ref": "./case.schema.json#/$defs/identifier"
+              },
+              "initial_free": {
+                "$ref": "./case.schema.json#/$defs/identifier"
+              },
+              "hold": {
+                "$ref": "./case.schema.json#/$defs/identifier"
+              }
+            },
+            "required": [
+              "values",
+              "initial",
+              "initial_free",
+              "hold"
+            ],
+            "additionalProperties": false
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "description": "labels[language][identifier]. Keys are language tags, then configured kind, status or approval state identifiers."
+          },
+          "numbering": {
+            "type": "object",
+            "properties": {
+              "display_names": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "description": "Display name per stored source prefix. The prefix itself never changes."
+              }
+            },
+            "required": [
+              "display_names"
+            ],
+            "additionalProperties": false
+          },
+          "member_access": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "additionalProperties": false,
+            "description": "Whether members other than the workspace owner may be given a case scope. Read from [member_access] in the settings; false when the table is absent. Changing it takes a restart."
+          }
+        },
+        "required": [
+          "kinds",
+          "statuses",
+          "approval_states",
+          "labels",
+          "numbering"
+        ],
+        "additionalProperties": false,
+        "description": "The case settings exactly as validated at startup; the same shape is accepted as a JSON settings file. Every identifier and display word comes from the deployment's settings, never from code."
+      },
+      "CasePlace": {
+        "type": "object",
+        "properties": {
+          "screen_id": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feature_id": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/url"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "description": "Where the case happened, attached by the app rather than chosen by the reporter. Omitted members are stored as null."
+      },
+      "CreateCaseRequest": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "$ref": "./case.schema.json#/$defs/origin"
+          },
+          "kind": {
+            "$ref": "./case.schema.json#/$defs/identifier"
+          },
+          "title": {
+            "$ref": "./case.schema.json#/$defs/title"
+          },
+          "body": {
+            "$ref": "./case.schema.json#/$defs/body"
+          },
+          "reporter_ref": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tenant_ref": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "place": {
+            "$ref": "#/components/schemas/CasePlace"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "legacy_ref": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "promised_due": {
+            "$ref": "./case.schema.json#/$defs/nullable_date"
+          }
+        },
+        "required": [
+          "origin",
+          "kind",
+          "title",
+          "body"
+        ],
+        "additionalProperties": false,
+        "description": "source, number, status, approval_state, closed_at and timestamps are never accepted from the client. reporter_ref must be null for detected cases; fingerprint is only for detected cases."
+      },
+      "CaseCreated": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "$ref": "./case.schema.json#/$defs/number"
+          },
+          "status": {
+            "$ref": "./case.schema.json#/$defs/identifier"
+          }
+        },
+        "required": [
+          "number",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PatchCaseRequest": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "$ref": "./common.schema.json#/$defs/version"
+          },
+          "status": {
+            "$ref": "./case.schema.json#/$defs/identifier"
+          },
+          "approval_state": {
+            "$ref": "./case.schema.json#/$defs/identifier"
+          },
+          "promised_due": {
+            "$ref": "./case.schema.json#/$defs/nullable_date"
+          },
+          "hold_until": {
+            "$ref": "./case.schema.json#/$defs/nullable_date"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          },
+          "actor_ref": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "additionalProperties": false,
+        "description": "At least one of status, approval_state, promised_due and hold_until. reason and actor_ref are recorded in the case event only."
+      },
+      "AddCasePersonRequest": {
+        "type": "object",
+        "properties": {
+          "reporter_ref": {
+            "$ref": "./case.schema.json#/$defs/ref"
+          }
+        },
+        "required": [
+          "reporter_ref"
+        ],
+        "additionalProperties": false
+      },
+      "AddCaseReplyRequest": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "$ref": "./case_reply.schema.json#/properties/body"
+          },
+          "author_ref": {
+            "anyOf": [
+              {
+                "$ref": "./case.schema.json#/$defs/ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivered_at": {
+            "$ref": "./common.schema.json#/$defs/nullable_utc_timestamp"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "AddCaseLinkRequest": {
+        "type": "object",
+        "properties": {
+          "link_type": {
+            "$ref": "./case_link.schema.json#/$defs/link_type"
+          },
+          "ref": {
+            "$ref": "./case_link.schema.json#/properties/ref"
+          }
+        },
+        "required": [
+          "link_type",
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "CaseMemberScope": {
+        "$ref": "./case_member_scope.schema.json"
+      },
+      "CaseMemberScopeEvent": {
+        "$ref": "./case_member_scope_event.schema.json"
+      },
+      "CaseMemberScopeCollection": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseMemberScope"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseMemberScopeEvent"
+            }
+          }
+        },
+        "required": [
+          "items",
+          "events"
+        ],
+        "additionalProperties": false
+      },
+      "SetCaseMemberScopeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0 only when the member has no case scope row yet; otherwise the exact stored revision, including a revoked one."
+          },
+          "role": {
+            "$ref": "./case_member_scope.schema.json#/$defs/role"
+          },
+          "sources": {
+            "$ref": "./case_member_scope.schema.json#/properties/sources"
+          },
+          "tenants": {
+            "$ref": "./case_member_scope.schema.json#/properties/tenants"
+          },
+          "numbers": {
+            "$ref": "./case_member_scope.schema.json#/properties/numbers"
+          },
+          "reason": {
+            "$ref": "./common.schema.json#/$defs/reason"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "role"
+        ],
+        "description": "role viewer or editor needs non-empty sources and tenants ([\"*\"] means all; \"*\" never mixed with other values, no repeated values); numbers is optional and defaults to []. role null revokes and must not carry sources, tenants or numbers. reason is optional."
+      }
+    }
+  }
+}

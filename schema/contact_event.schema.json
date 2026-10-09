@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/contact_event.schema.json",
+  "title": "ContactEvent",
+  "type": "object",
+  "properties": {
+    "operation_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "source_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "contact_id": {
+      "$ref": "common.schema.json#/$defs/contact_id"
+    },
+    "requester_member_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "route": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "$ref": "common.schema.json#/$defs/reason"
+    },
+    "at_utc": {
+      "$ref": "common.schema.json#/$defs/utc_timestamp"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/field_change"
+      }
+    },
+    "before": {
+      "anyOf": [
+        {
+          "$ref": "contact_record.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "after": {
+      "$ref": "contact_record.schema.json"
+    },
+    "request_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "operation_id",
+    "workspace_id",
+    "source_id",
+    "contact_id",
+    "requester_member_id",
+    "route",
+    "reason",
+    "at_utc",
+    "changes",
+    "before",
+    "after",
+    "request_hash"
+  ],
+  "additionalProperties": false,
+  "description": "Owner-only contact history, distinct from workspace/project events. Exact field changes, timestamp, actor and complete before/after versions."
+}

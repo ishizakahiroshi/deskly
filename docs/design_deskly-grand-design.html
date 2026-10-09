@@ -174,7 +174,7 @@ code{overflow-wrap:anywhere} .maintenance li{margin:12px 0}
 <tr><td>Deskly単独の複数AI入口</td><td>CLI・stdio・Remote MCPと公式SDKを統合候補へ反映。6種類のエラー理由の欠落を修正し、公開CIとWindowsの3経路の合成回帰が成功</td><td>固定候補で総合確認する。実行側制限は維持。画面・ローカルAI・Claude Desktop・スマホの実機確認は未実施</td></tr>
 <tr><td>中核の作り直し・移行</td><td>共通中核と配置先別の部品という採用方針がある。手元には別作業の未確定変更がある</td><td>親計画と移行の検収を確認。<a href="local/plan_deployment-target-choice.md">作り直しの親MD</a></td></tr>
 <tr><td>既存案件での価値確認</td><td>実案件を使う試用計画がある。試用完了・公開OSSの証跡表示の受入は今回確認していない</td><td><a href="local/plan_deskly-real-case-pilot.md">既存の試用MD</a>で進める。画面の価値確認とGitHub受付の完成を分ける</td></tr>
-<tr><td>バックログ・WBS・ガント</td><td>専有実装と共有差分を単一候補へ統合。専用branchのCIには7失敗があるが、修正後統合候補の公開CIは全5checks成功。実画面は未確認</td><td>固定統合候補で総合確認を行う。WindowsのVPS終了処理も修正後の正常終了を確認。<a href="bot/plan_deskly-planning-wbs-gantt-backlog.md">既存の依頼MD</a>と全体の実行入口から進め、旧版へ二重実装しない</td></tr>
+<tr><td>バックログ・WBS・ガント</td><td>専有実装と共有差分を単一候補へ統合。専用branchのCIには7失敗があるが、修正後統合候補の公開CIは全5checks成功。実画面は未確認</td><td>固定統合候補で総合確認を行う。WindowsのVPS終了処理も修正後の正常終了を確認。<a href="local/plan_deskly-grand-design.md">手元の実行入口</a>から非公開の依頼と根拠を辿り、旧版へ二重実装しない</td></tr>
 <tr><td>返事の受け箱・担当AIへの通知</td><td>最小版の計画はある。自動捕捉・担当AIの起動まで完成した証拠は今回確認していない</td><td><a href="local/reference_deskly-design-sources.md#bridge">many-ai-cliの既存計画</a>で進める</td></tr>
 <tr><td>配備・共有・実アプリ</td><td>既存運用と新しいGitHub受付の受入は別。新受付の本番稼働は今回確認していない</td><td>個人／会社の区画、本人認証、権限、実接続、復旧、スマホ、無料枠実測を検収</td></tr>
 </tbody></table></div>
@@ -264,7 +264,7 @@ code{overflow-wrap:anywhere} .maintenance li{margin:12px 0}
 </section>
 <section id="sources"><h2>7. 詳細資料の持ち場</h2>
 <p>全体の方針と関係はこのHTML。具体的な作業は<a href="local/plan_deskly-grand-design.md">入口MDと各repoの計画</a>。契約・根拠・過去資料の所在は<a href="local/reference_deskly-design-sources.md">根拠索引</a>。Obsidianには振り返りと案内を置く。</p>
-<p>公開Pythonソースの既存機能と、別の開発repoで進む共通中核・GitHub受付は実装段階が違います。公開ソースに新しい受付が実装済みと読まない。<a href="reference_team-dashboard.md">既存の案件管理設計</a>も、適用範囲を確認して読む。</p>
+<p>公開ソースには旧Python版とTypeScriptの共有中核・Rust CLIの基盤があり、非公開の開発repoで進む新しいGitHub受付とは実装段階が違います。公開ソースに新しい受付が実装済みと読まない。<a href="reference_team-dashboard.md">既存の案件管理設計</a>も、適用範囲を確認して読む。</p>
 <p>元の10月6日の見取り図と旧工程は<a href="local/archive/design_deskly-next-roadmap_2026-10-03.html#map-all">旧資料</a>に保存。今後の全体方針と最新の現在地は、この固定入口だけを更新します。</p>
 </section>
 </main><footer><p>Deskly 全体設計 · 固定入口 · 更新・照合 2026-10-08</p></footer>

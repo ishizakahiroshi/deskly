@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- deskly:context -->
+  <title>案件の仕事 · Deskly</title>
+  <link rel="stylesheet" href="/assets/workspace.css">
+  <script type="module" src="/assets/main.js"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <div><p class="eyebrow">DESKLY / WORKSPACE</p><h1>案件の仕事</h1>
+        <p class="muted">許可された案件と、自分の次の行動を確認します。</p></div>
+      <p id="workspace-status" class="muted" role="status" aria-live="polite">読み込んでいます…</p>
+    </header>
+    <nav class="workspace-nav" aria-label="主な画面">
+      <button id="open-workspace" type="button" aria-current="page">案件の仕事</button>
+      <button id="open-contacts" type="button" hidden>連絡</button>
+      <button id="open-cases" type="button" hidden>受付</button>
+    </nav>
+    <p id="contact-access-message" class="muted" hidden>連絡: この画面を見る権限がありません</p>
+    <p id="case-access-message" class="muted" hidden>受付: この画面を見る権限がありません</p>
+    <main id="workspace-view">
+      <p id="workspace-message" role="status" aria-live="polite"></p>
+      <div id="workspace-content" hidden>
+        <nav class="workspace-nav" aria-label="案件の画面">
+          <button type="button" data-tab="all">全体</button>
+          <button type="button" data-tab="detail">案件詳細</button>
+          <button type="button" data-tab="mine">自分の仕事</button>
+          <button type="button" data-tab="access" id="workspace-access-tab" hidden>メンバーと権限</button>
+          <button type="button" id="workspace-refresh" class="secondary-button">台帳を再読込</button>
+        </nav>
+        <section id="workspace-all" class="panel" aria-label="全体"></section>
+        <section id="workspace-detail" class="panel" aria-label="案件詳細" hidden></section>
+        <section id="workspace-mine" class="panel" aria-label="自分の仕事" hidden></section>
+        <section id="workspace-access" class="panel" aria-label="メンバーと案件権限" hidden></section>
+        <section id="workspace-editor" class="panel workspace-editor" aria-labelledby="workspace-edit-heading" hidden>
+          <h2 id="workspace-edit-heading">作成・更新</h2>
+          <p id="workspace-edit-target" class="muted"></p>
+          <form id="workspace-form">
+            <div id="workspace-fields" class="workspace-fields"></div>
+            <label>変更理由 <input name="reason" id="workspace-reason" required maxlength="240" value="日常作業の更新"></label>
+            <div><button type="submit">変更を確認</button>
+              <button id="workspace-edit-cancel" type="button" class="secondary-button">編集を閉じる</button></div>
+          </form>
+        </section>
+        <section id="workspace-preview" class="panel" aria-labelledby="workspace-preview-heading" hidden>
+          <h2 id="workspace-preview-heading">変更の見本</h2>
+          <p id="workspace-preview-target"></p>
+          <dl id="workspace-diff"></dl>
+          <p id="workspace-preview-reason"></p>
+          <button id="workspace-apply" type="button">この内容で保存</button>
+          <button id="workspace-cancel" type="button" class="secondary-button">戻る</button>
+        </section>
+      </div>
+    </main>
+    <section id="contact-view" aria-label="連絡" hidden>
+      <p id="contact-message" role="status" aria-live="polite"></p>
+      <div id="contact-content" hidden>
+        <section class="panel">
+          <h2>連絡</h2>
+          <p class="muted">人が送った連絡を記録します。「送信済み」への変更は、メールやチャットを送信しません。</p>
+          <form id="contact-source-form" class="workspace-search" autocomplete="off">
+            <label>接続元 ID <input id="contact-source" name="source" required placeholder="登録済み接続元の UUID" maxlength="36"></label>
+            <button type="submit">連絡を表示</button>
+          </form>
+          <p class="muted">接続元の一覧 API は未提供です。管理者が登録した連絡台帳の ID を指定してください。</p>
+          <div class="actions"><button id="contact-add" type="button">下書きを追加</button><button id="contact-refresh" type="button" class="secondary-button">連絡を再読込</button></div>
+        </section>
+        <section id="contact-editor" class="panel workspace-editor" hidden>
+          <h2 id="contact-edit-heading">下書きを追加</h2>
+          <form id="contact-form" autocomplete="off">
+            <div id="contact-fields" class="workspace-fields"></div>
+            <label>変更理由 <input id="contact-reason" name="reason" required maxlength="240" autocomplete="off"></label>
+            <div class="actions"><button type="submit">連絡の変更を確認</button><button id="contact-edit-cancel" type="button" class="secondary-button">連絡の編集を閉じる</button></div>
+          </form>
+        </section>
+        <section id="contact-preview" class="panel" hidden>
+          <h2>変更の見本</h2><div id="contact-diff"></div>
+          <button id="contact-apply" type="button">この連絡を保存</button><button id="contact-cancel" type="button" class="secondary-button">連絡の見本を閉じる</button>
+        </section>
+        <section id="contact-body-panel" class="panel" hidden>
+          <h2 id="contact-body-heading">本文</h2><pre id="contact-body"></pre>
+          <button id="contact-export" type="button" hidden>この本文を書き出す</button><button id="contact-body-close" type="button" class="secondary-button">本文を閉じる</button>
+        </section>
+        <section id="contact-detail" class="panel"></section>
+        <section id="contact-waiting" class="panel"></section>
+        <section class="panel"><h2>連絡を絞り込む</h2>
+          <form id="contact-filters" class="workspace-fields" autocomplete="off">
+            <label>状態 <select name="state"><option value="">すべて</option><option>下書き</option><option>送信済み</option><option>回答待ち</option><option>対応中</option><option>完了</option><option>送らない</option></select></label>
+            <label>案件 <input name="project" maxlength="500" placeholder="案件名の完全一致"></label>
+            <label>検索 <input name="q" maxlength="500" placeholder="案件・宛先・連絡内容など"></label>
+            <button type="submit">連絡を検索</button>
+          </form>
+          <div id="contact-rows"></div>
+        </section>
+      </div>
+    </section>
+    <section id="case-view" aria-label="受付" hidden>
+      <p id="case-message" role="status" aria-live="polite"></p>
+      <div id="case-content" hidden>
+        <section class="panel">
+          <h2>受付</h2>
+          <p class="muted">アプリや人から届いた受付を見て、状態・承認・期日を動かし、返事と関連を記録します。受付はアプリの受け口で作るもので、この画面からは作りません。返事を保存しても相手へは送信しません。</p>
+          <div class="actions"><button id="case-refresh" type="button" class="secondary-button">受付を再読込</button></div>
+        </section>
+        <section id="case-panels" class="panel" aria-label="受付のパネル"></section>
+        <section id="case-editor" class="panel workspace-editor" aria-labelledby="case-edit-heading" hidden>
+          <h2 id="case-edit-heading">受付を更新</h2>
+          <p id="case-edit-target" class="muted"></p>
+          <form id="case-form" autocomplete="off">
+            <div id="case-fields" class="workspace-fields"></div>
+            <label id="case-reason-label">変更理由 <input id="case-reason" name="reason" required maxlength="240" autocomplete="off"></label>
+            <div class="actions"><button type="submit">受付の変更を確認</button><button id="case-edit-cancel" type="button" class="secondary-button">受付の編集を閉じる</button></div>
+          </form>
+        </section>
+        <section id="case-preview" class="panel" aria-labelledby="case-preview-heading" hidden>
+          <h2 id="case-preview-heading">変更の確認</h2><div id="case-diff"></div>
+          <button id="case-apply" type="button">この内容で受付を保存</button><button id="case-cancel" type="button" class="secondary-button">受付の確認を閉じる</button>
+        </section>
+        <section id="case-detail" class="panel"></section>
+        <section class="panel"><h2>受付を絞り込む</h2>
+          <form id="case-filters" class="workspace-fields" autocomplete="off">
+            <label>状態 <select name="status"><option value="">すべて</option></select></label>
+            <label>種別 <select name="kind"><option value="">すべて</option></select></label>
+            <label>アプリ <select name="source"><option value="">すべて</option></select></label>
+            <label>誰待ち <select name="waiting"><option value="">すべて</option></select></label>
+            <label class="case-check"><input type="checkbox" name="overdue"> 期限を過ぎたものだけ</label>
+            <button type="submit">受付を絞り込む</button>
+          </form>
+          <div id="case-rows"></div>
+        </section>
+      </div>
+    </section>
+    <footer class="site-footer muted">Deskly · workspace</footer>
+  </div>
+</body>
+</html>

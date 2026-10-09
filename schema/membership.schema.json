@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/membership.schema.json",
+  "title": "Membership",
+  "description": "Explicitly scoped membership and grants; no flattening of owner/member into editor/viewer.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/workspaceMembership"
+    },
+    {
+      "$ref": "#/$defs/projectMembership"
+    },
+    {
+      "$ref": "#/$defs/sourceMembership"
+    }
+  ],
+  "$defs": {
+    "workspaceMembership": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "const": "workspace"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id",
+          "description": "Stable members.id, serialized as member_id consistently with the public member view."
+        },
+        "name": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "role": {
+          "$ref": "common.schema.json#/$defs/workspace_role"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/version",
+          "description": "Optional public member-view version: Python uses 1 active / 2 inactive, not a persisted members table revision."
+        },
+        "identity": {
+          "$ref": "common.schema.json#/$defs/identity",
+          "description": "Optional owner/operator-only identity binding. Omit from ordinary member listings; never infer it from login or email."
+        }
+      },
+      "required": [
+        "scope",
+        "workspace_id",
+        "member_id",
+        "name",
+        "role",
+        "active"
+      ],
+      "additionalProperties": false
+    },
+    "projectMembership": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "const": "project"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "role": {
+          "$ref": "common.schema.json#/$defs/project_role"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/version"
+        }
+      },
+      "required": [
+        "scope",
+        "workspace_id",
+        "project_id",
+        "member_id",
+        "role",
+        "version"
+      ],
+      "additionalProperties": false,
+      "description": "A project-scoped grant. Retain role=null and its version after revocation to avoid stale grant reactivation. Workspace owners cannot be granted editor/viewer as a replacement role."
+    },
+    "sourceMembership": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "const": "source"
+        },
+        "workspace_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "source_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "member_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "version": {
+          "$ref": "common.schema.json#/$defs/version"
+        }
+      },
+      "required": [
+        "scope",
+        "workspace_id",
+        "source_id",
+        "member_id",
+        "allowed",
+        "version"
+      ],
+      "additionalProperties": false,
+      "description": "Independent source permission; does not imply project access, and project access does not imply this permission."
+    }
+  }
+}

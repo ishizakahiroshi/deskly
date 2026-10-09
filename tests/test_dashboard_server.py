@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
+import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -377,6 +379,37 @@ def test_busy_response_survives_request_body(monkeypatch: pytest.MonkeyPatch) ->
                 assert json.loads(body) == {"error": "dashboard_busy"}
         finally:
             server._request_slots.release()
+
+
+def test_idle_connection_is_closed_after_read_timeout_and_frees_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dashboard_server, "MAX_ACTIVE_REQUESTS", 1)
+    monkeypatch.setattr(dashboard_server.DashboardRequestHandler, "timeout", 1.0)
+    with _running_dashboard() as (server, base_url):
+        with socket.create_connection(("127.0.0.1", server.server_port), timeout=5) as idle:
+            # The only slot is held by the connection that sent nothing.
+            time.sleep(0.2)
+            assert not server._request_slots.acquire(blocking=False)
+            assert idle.recv(1) == b""
+        assert server._request_slots.acquire(timeout=3)
+        server._request_slots.release()
+        status, _headers, _body = _request(base_url, "/healthz")
+        assert status in {200, 400, 401, 403, 404}
+
+
+def test_normal_request_completes_within_read_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dashboard_server.DashboardRequestHandler, "timeout", 2.0)
+    with _running_dashboard() as (_server, base_url):
+        cookie, _headers = _login(base_url)
+        status, _headers, _body = _request(
+            base_url,
+            "/api/dashboard",
+            headers={"Cookie": cookie, "Sec-Fetch-Site": "same-origin"},
+        )
+    assert status == 200
 
 
 def test_notification_preview_read_failure_returns_unavailable_not_zero(

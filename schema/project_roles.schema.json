@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/project_roles.schema.json",
+  "title": "CurrentProjectRoles",
+  "type": "object",
+  "properties": {
+    "member_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "$ref": "common.schema.json#/$defs/stable_id"
+          },
+          "role": {
+            "$ref": "common.schema.json#/$defs/role"
+          }
+        },
+        "required": [
+          "project_id",
+          "role"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "member_id",
+    "items"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,99 @@
+{
+  "event_kind": "entity",
+  "operation_id": "00000000-0000-0000-0000-000000000006",
+  "workspace_id": "00000000-0000-0000-0000-000000000001",
+  "entity_id": "00000000-0000-0000-0000-000000000003",
+  "member_id": "00000000-0000-0000-0000-000000000002",
+  "requester_member_id": "00000000-0000-0000-0000-000000000002",
+  "route": "dashboard",
+  "executor_kind": "unknown",
+  "executor_ref": null,
+  "executor_verified": false,
+  "reason": "合成の記録",
+  "at_utc": "2026-01-01T00:00:00Z",
+  "before": null,
+  "after": {
+    "id": "00000000-0000-0000-0000-000000000003",
+    "workspace_id": "00000000-0000-0000-0000-000000000001",
+    "project_id": null,
+    "type": "project",
+    "version": 1,
+    "archived": false,
+    "name": "合成案件",
+    "purpose": "合成の目的",
+    "owner_id": "00000000-0000-0000-0000-000000000002",
+    "state": "未確認"
+  },
+  "changes": [
+    {
+      "field": "archived",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": false
+    },
+    {
+      "field": "id",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "00000000-0000-0000-0000-000000000003"
+    },
+    {
+      "field": "name",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "合成案件"
+    },
+    {
+      "field": "owner_id",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "00000000-0000-0000-0000-000000000002"
+    },
+    {
+      "field": "project_id",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": null
+    },
+    {
+      "field": "purpose",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "合成の目的"
+    },
+    {
+      "field": "state",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "未確認"
+    },
+    {
+      "field": "type",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "project"
+    },
+    {
+      "field": "version",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": 1
+    },
+    {
+      "field": "workspace_id",
+      "before_present": false,
+      "after_present": true,
+      "before": null,
+      "after": "00000000-0000-0000-0000-000000000001"
+    }
+  ]
+}

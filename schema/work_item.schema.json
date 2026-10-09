@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deskly.example/schema/work_item.schema.json",
+  "title": "WorkItem",
+  "description": "Normalized Python workspace entity. All persisted data fields are required; optional projections are read-only and must not be sent as mutable data.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/id"
+    },
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/workspace_id"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/stable_id"
+    },
+    "type": {
+      "const": "work_item"
+    },
+    "version": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/version"
+    },
+    "archived": {
+      "$ref": "common.schema.json#/$defs/entity_metadata/properties/archived"
+    },
+    "kind": {
+      "$ref": "#/$defs/data/properties/kind"
+    },
+    "title": {
+      "$ref": "#/$defs/data/properties/title"
+    },
+    "assignee_id": {
+      "$ref": "#/$defs/data/properties/assignee_id"
+    },
+    "next_action": {
+      "$ref": "#/$defs/data/properties/next_action"
+    },
+    "check_date": {
+      "$ref": "#/$defs/data/properties/check_date"
+    },
+    "waiting_reason": {
+      "$ref": "#/$defs/data/properties/waiting_reason"
+    },
+    "state": {
+      "$ref": "#/$defs/data/properties/state"
+    },
+    "milestone_id": {
+      "$ref": "#/$defs/data/properties/milestone_id"
+    },
+    "project_name": {
+      "$ref": "common.schema.json#/$defs/text",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "project_id",
+    "type",
+    "version",
+    "archived",
+    "kind",
+    "title",
+    "assignee_id",
+    "next_action",
+    "check_date",
+    "waiting_reason",
+    "state",
+    "milestone_id"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "data": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "common.schema.json#/$defs/work_kind"
+        },
+        "title": {
+          "$ref": "common.schema.json#/$defs/required_short_text"
+        },
+        "assignee_id": {
+          "$ref": "common.schema.json#/$defs/stable_id"
+        },
+        "next_action": {
+          "$ref": "common.schema.json#/$defs/required_long_text"
+        },
+        "check_date": {
+          "$ref": "common.schema.json#/$defs/optional_date"
+        },
+        "waiting_reason": {
+          "$ref": "common.schema.json#/$defs/long_text"
+        },
+        "state": {
+          "$ref": "common.schema.json#/$defs/item_state"
+        },
+        "milestone_id": {
+          "$ref": "common.schema.json#/$defs/optional_id"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "assignee_id",
+        "next_action",
+        "check_date",
+        "waiting_reason",
+        "state",
+        "milestone_id"
+      ],
+      "additionalProperties": false,
+      "description": "Exact mutable FIELDS[\"work_item\"] from workspace_service.py. Creation/update submit the complete object; empty optional fields remain present."
+    }
+  }
+}
