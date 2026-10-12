@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<!--docsweep-meta
+type: design
+status: watching
+tags: [deskly, grand-design]
+owner: ishizakahiroshi
+related: [local/plan_deskly-grand-design.md]
+last_reviewed: 2026-10-12
+docsweep_policy: never_archive
+-->
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deskly グランドデザイン — 全体図と作業の固定入口</title><style>
+  :root {
+    --bg:#f7f3ea; --ink:#241f1a; --ink-soft:#837a6c; --line:rgba(36,31,26,0.12);
+    --accent:#ff7a3d; --card:#fffdf8; --ok:#2e7d4f; --warn:#b8860b; --bad:#b3261e;
+    --display:'Baloo 2','Zen Maru Gothic',system-ui,cursive;
+    --body:'Zen Maru Gothic',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--body);color:var(--ink);background:var(--bg);line-height:1.7;
+       text-wrap:pretty;font-size:16px}
+  .wrap{max-width:min(1080px,92vw);margin:0 auto;padding:48px 0 80px}
+  h1{font-family:var(--display);font-weight:800;font-size:2rem;margin:0 0 12px;letter-spacing:-0.01em}
+  h2{font-family:var(--display);font-weight:700;font-size:1.4rem;margin:48px 0 16px;
+     padding-bottom:8px;border-bottom:2px solid var(--ink)}
+  h3{font-family:var(--display);font-weight:700;font-size:1.1rem;margin:28px 0 10px}
+  p,li{font-size:1rem}
+  a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}
+  .card{background:var(--card);border:2px solid var(--ink);border-radius:18px;
+        padding:22px 24px;box-shadow:4px 5px 0 var(--line);margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff;
+        border:2px solid var(--ink);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);font-size:0.94rem}
+  th{background:#fffdf8;font-family:var(--display);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;padding:2px 10px;border-radius:999px;
+       font-family:var(--display);font-weight:700;font-size:0.78rem;
+       border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .tag-ok{background:var(--ok);color:#fff} .tag-warn{background:var(--warn);color:#fff}
+  .tag-bad{background:var(--bad);color:#fff} .tag-accent{background:var(--accent);color:#fff}
+  .system-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;
+                border-radius:999px;border:2px solid var(--ink);background:var(--card);
+                font-family:var(--display);font-weight:700;font-size:0.86rem}
+  .system-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .meta{color:var(--ink-soft);font-size:0.88rem}
+  @media print{ body{background:#fff} .card{box-shadow:none} }
+
+body{max-width:1080px;margin:40px auto;padding:0 24px;box-sizing:border-box}
+.entry-links{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0}
+.entry-links a{padding:10px 16px;border:2px solid var(--ink);border-radius:999px;background:var(--card);font-weight:700}
+.current-note{padding:18px 22px;border-left:5px solid var(--accent);background:var(--card);margin:18px 0}
+.diagram-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px}
+.diagram-wrap svg{display:block;min-width:900px;width:100%;height:auto}
+.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.summary-grid article{padding:20px;background:var(--card);border:1px solid var(--line);border-radius:18px}
+td,th{overflow-wrap:anywhere} .tablewrap{overflow-x:auto} .tablewrap table{min-width:660px}
+code{overflow-wrap:anywhere} .maintenance li{margin:12px 0}
+.map-legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.map-legend span{padding:5px 10px;border-radius:8px;font-size:.88rem;font-weight:700;border:1px solid currentColor}
+.map-ready{background:#e8f4ec;color:#23633d}.map-partial{background:#fff0da;color:#855014}
+.map-pending{background:#fce9e7;color:#9b3029}.map-unknown{background:#edf0f4;color:#505965}
+.map-experience{background:#e8f0fc;color:#285987}
+.diagram-wrap svg path[data-state="experience"]{stroke:#285987;stroke-width:3;stroke-dasharray:none}
+.diagram-wrap svg path[data-state="pending"]{stroke:#9b3029;stroke-width:3;stroke-dasharray:7 5}
+.diagram-wrap svg path[data-state="partial"]{stroke:#855014;stroke-width:3;stroke-dasharray:7 5}
+.diagram-wrap svg path[data-state="unknown"]{stroke:#697584;stroke-width:2;stroke-dasharray:3 5}
+.build-flow svg text{font-family:var(--body);fill:var(--ink)}
+.build-flow svg .flow-title{font-size:16px;font-weight:700}
+.build-flow svg .flow-detail{font-size:13px}
+.build-flow svg .flow-stage{font-size:12px;fill:#855014;font-weight:700}
+.build-flow svg .build-arrow{fill:none;stroke:#837a6c;stroke-width:2;marker-end:url(#buildArrow)}
+@media(max-width:700px){.summary-grid{grid-template-columns:1fr}.entry-links a{width:100%;box-sizing:border-box}}
+@media print{.entry-links{display:none}.diagram-wrap{overflow:visible}.diagram-wrap svg{min-width:0}}
+</style></head><body>
+<header class="hero">
+<p class="eyebrow">Deskly · 全体設計の正典</p>
+<h1>Desklyから、<br>人・AI・仕事をつなぐ。</h1>
+<p class="lead">各人が普段使うAIやアプリから同じ台帳へ記録し、Desklyで案件・連絡・次の行動を見渡す。指示・作業・成果・工数は、それぞれの道具と参照で結ぶ。</p>
+<p>開発・公開方針：2026年10月12日本人決定。実装・連携の照合日は各節に記載しています。10月6日の「全体の見取り図」を引き継いだ固定の入口として、このファイルを更新します。</p>
+<nav class="entry-links" aria-label="設計と作業への入口">
+<a href="#development-policy">開発・公開の方針</a><a href="#map-all">全体の関係図</a><a href="#latest">最新の現在地</a><a href="#work">次の作業</a><a href="local/review_deskly-start-checks_2026-10-08.html">開始前の確認・判断（手元）</a><a href="local/plan_deskly-grand-design.md">作業を実行するMD</a><a href="local/reference_deskly-design-sources.md">根拠資料の索引（手元）</a></nav>
+</header>
+<main>
+<aside class="current-note" aria-label="作者の現在の作業への案内">
+<b>今の位置・AIの次の作業・あなたへのお願い</b>
+<p>作者は<a href="local/design_task-registry.html">手元の作業表示</a>を開くと、現在の作業と必要な判断・操作を確認できます。判断がない場合は「今の判断・操作は不要」と表示します。詳しい理由・根拠・所属一覧は折りたたみから辿れます。</p>
+<p class="meta">作者用表示は非公開の手元資料です。公開cloneには含まれません。AIは既存の<a href="local/plan_deskly-grand-design.md">固定MD</a>から元の案件を照合して進めます。</p>
+</aside>
+<section id="development-policy"><h2>開発・公開の方針 — 個人用を先に完成させる</h2>
+<p class="meta">2026年10月12日・本人決定</p>
+<p><b>新しい開発はprivateで進め、自分が毎日使いたくなるDesklyを先に完成させます。</b> いつもの入口から依頼し、選んだ担当へ引き継ぎ、必要な承認と結果を受け取る便利さを、本人の実利用で確かめます。</p>
+<div class="summary-grid"><article><h3>新しい開発は非公開</h3><p>個人用の実装・試行・環境との接続は、非公開の開発repoで進めます。本人の使い方に合わせて完成させます。</p></article><article><h3>公開済み版は当面維持</h3><p>既存の公開Desklyとライセンスを維持します。新しい機能を公開版へ反映する範囲は、別工程で確認します。</p></article><article><h3>OSS公開・販売は実利用の後</h3><p>全体公開・共通部分だけ公開・個人用継続・販売は未決定です。便利さを確かめてから、公開対象と必要な権利・ライセンスを確認して判断します。</p></article></div>
+<p><b>中央AIを必須にしません。</b> Desklyは案件・担当・許可・引き継ぎ・成果参照を保持し、人や選んだAIが同じ案件を扱う基盤です。Hermes Agent等は任意の担当として接続する候補で、不在・停止・交換ができる構成を目指します。通知・配送・単純な工程管理は通常プログラムが担い、待受のためだけにAIを呼び続けません。</p>
+<p class="meta">ここは開発方針の決定です。連携の完成・実機受入・需要や収益性の証明ではありません。具体的な作業は<a href="local/plan_deskly-grand-design.md">固定MD</a>から進めます。</p>
+</section>
+<section id="map-all"><h2>1. 全体の見取り図</h2>
+<p>あなた、Claudeのデスクトップ・スマホ、Deskly、many-ai-cli、手元のAI、チャット、クラウドエージェント、指示の資料、作業するリポを一つの図で見る。</p>
+<p><b>この全体の連携は、まだ完成していません。</b> 2026年10月8日の確認記録を基に、箱と接続へ現在の状態を記載しました。道具が存在することと、Desklyにつながって使えることは別です。</p>
+<div class="map-legend" aria-label="全体図の状態の凡例"><span class="map-ready">緑：記載範囲の検収済み・契約確定</span><span class="map-experience">青：手動運用・提出の実績あり</span><span class="map-partial">橙：一部実装・未受入</span><span class="map-pending">赤：未完成</span><span class="map-unknown">灰：未確認・未決定</span></div>
+<div class="diagram-wrap"><svg viewBox="0 0 1000 585" role="img" aria-labelledby="allTitle allDesc">
+<title id="allTitle">Deskly全体図と完成状況：全体連携は未完成</title><desc id="allDesc">共通契約と採番ツールは検収・取り込み済みだが、採番の実運用切替は未実施。手元AIからSlackを通じたdotsへの指示とPR提出は実績あり。DesklyのGitHub受付は一部実装・提出PR未受入。Claudeアプリと手元AIからDesklyへの共通MCP接続は未完成・実機未検収。返事の自動捕捉と担当AI通知は完成未確認。GitBucket対応は未決定。文字と色で各状態を示す。</desc>
+<defs><marker id="arrow4" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="#241f1a"/></marker></defs>
+<rect x="470" y="180" width="520" height="210" rx="14" fill="#f3f5fa" stroke="#241f1a" stroke-width="2"/>
+<text x="486" y="204" font-size="15" font-weight="700">GitHub：最初の記録先 ／ GitBucket対応：未決定</text>
+<rect x="20" y="235" width="140" height="100" rx="14" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="90" y="270" text-anchor="middle" font-size="20" font-weight="700">あなた</text><text x="90" y="297" text-anchor="middle" font-size="14">仕事を決める</text><text x="90" y="320" text-anchor="middle" font-size="14">結果を確かめる</text>
+<rect x="240" y="30" width="190" height="90" rx="14" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="335" y="60" text-anchor="middle" font-size="18" font-weight="700">Claude アプリ</text><text x="335" y="85" text-anchor="middle" font-size="14">デスクトップ・スマホ</text><text x="335" y="107" text-anchor="middle" font-size="12" font-weight="700" fill="#9b3029">Deskly接続：未完成・未検収</text>
+<rect x="240" y="200" width="190" height="170" rx="14" fill="#fff0da" stroke="#855014" stroke-width="3"/>
+<text x="335" y="230" text-anchor="middle" font-size="20" font-weight="700">Deskly</text><text x="335" y="254" text-anchor="middle" font-size="13">既存の連絡・案件台帳あり</text><text x="335" y="278" text-anchor="middle" font-size="12" font-weight="700" fill="#855014">GitHub受付：一部実装</text><text x="335" y="299" text-anchor="middle" font-size="12" font-weight="700" fill="#855014">提出PR：未受入・未merge</text><text x="335" y="322" text-anchor="middle" font-size="12" font-weight="700" fill="#9b3029">共通MCP入口：未完成</text><text x="335" y="348" text-anchor="middle" font-size="12">個人・会社の共有検収は残る</text>
+<rect x="240" y="450" width="190" height="90" rx="14" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="335" y="480" text-anchor="middle" font-size="18" font-weight="700">many-ai-cli</text><text x="335" y="505" text-anchor="middle" font-size="13">ローカルAI・セッション</text><text x="335" y="527" text-anchor="middle" font-size="11" font-weight="700" fill="#505965">返事の自動捕捉：完成未確認</text>
+<rect x="490" y="30" width="200" height="90" rx="14" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="590" y="60" text-anchor="middle" font-size="18" font-weight="700">Slack など</text><text x="590" y="85" text-anchor="middle" font-size="14">手元AIから指示を届ける</text><text x="590" y="107" text-anchor="middle" font-size="12" font-weight="700" fill="#285987">手動依頼：運用実績あり</text>
+<rect x="750" y="30" width="235" height="90" rx="14" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="867" y="60" text-anchor="middle" font-size="17" font-weight="700">クラウドエージェント</text><text x="867" y="85" text-anchor="middle" font-size="13">dotsなどの外部AI</text><text x="867" y="107" text-anchor="middle" font-size="12" font-weight="700" fill="#285987">dots：実装・PR提出の実績あり</text>
+<rect x="490" y="225" width="150" height="120" rx="12" fill="#fffdf8" stroke="#2563eb" stroke-width="3"/>
+<text x="565" y="262" text-anchor="middle" font-size="18" font-weight="700">Issue</text><text x="565" y="290" text-anchor="middle" font-size="14">依頼の状態の正本</text><text x="565" y="314" text-anchor="middle" font-size="12" font-weight="700" fill="#23633d">正本の契約：確定</text>
+<rect x="660" y="225" width="150" height="120" rx="12" fill="#fffdf8" stroke="#ff7a3d" stroke-width="3"/>
+<text x="735" y="251" text-anchor="middle" font-size="18" font-weight="700">agent-board</text><text x="735" y="275" text-anchor="middle" font-size="13">指示書・資料</text><text x="735" y="297" text-anchor="middle" font-size="10" font-weight="700" fill="#23633d">契約・採番ツール：検収済み</text><text x="735" y="320" text-anchor="middle" font-size="10" font-weight="700" fill="#9b3029">採番の実運用切替：未実施</text>
+<rect x="830" y="225" width="145" height="120" rx="12" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="902" y="253" text-anchor="middle" font-size="17" font-weight="700">作業する repo</text><text x="902" y="279" text-anchor="middle" font-size="13">branch・PR・CI</text><text x="902" y="305" text-anchor="middle" font-size="11" font-weight="700" fill="#285987">PR提出：実績あり</text><text x="902" y="328" text-anchor="middle" font-size="11" fill="#855014">受付PRの受入は残る</text>
+<rect x="490" y="450" width="210" height="90" rx="14" fill="#fffdf8" stroke="#241f1a" stroke-width="2"/>
+<text x="595" y="480" text-anchor="middle" font-size="18" font-weight="700">手元の AI</text><text x="595" y="505" text-anchor="middle" font-size="14">Claude Code など</text><text x="595" y="527" text-anchor="middle" font-size="14">指示書を書く・検収</text>
+<path d="M90 235 V75 H236" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="98" y="150" font-size="12">頼む・見る</text>
+<path d="M160 285 H236" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="198" y="275" text-anchor="middle" font-size="12">見る・登録</text>
+<path d="M90 335 V495 H236" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="98" y="420" font-size="12">承認する</text>
+<path data-state="pending" d="M335 120 V196" fill="none" stroke="#241f1a" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow4)"/>
+<text x="343" y="162" font-size="12" font-weight="700" fill="#9b3029">MCP接続：未完成</text>
+<path data-state="unknown" d="M335 540 V562 H595 V544" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="465" y="577" text-anchor="middle" font-size="12" fill="#505965">担当AIへの自動通知：完成未確認</text>
+<path data-state="pending" d="M490 515 H445 V410 H335 V374" fill="none" stroke="#241f1a" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow4)"/>
+<text x="250" y="430" font-size="12" font-weight="700" fill="#9b3029">手元AIの共通MCP登録：未完成</text>
+<path data-state="experience" d="M490 465 H465 V75 H486" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<path data-state="experience" d="M690 75 H746" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<path data-state="partial" d="M434 285 H486" fill="none" stroke="#241f1a" stroke-width="2" stroke-dasharray="6 5" marker-start="url(#arrow4)" marker-end="url(#arrow4)"/>
+<text x="460" y="310" text-anchor="middle" font-size="10" fill="#855014"><tspan x="460">一部</tspan><tspan x="460" dy="13">実装</tspan></text>
+<path data-state="experience" d="M560 450 V349" fill="none" stroke="#241f1a" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow4)"/>
+<text x="568" y="422" font-size="12" fill="#285987">Issue管理：運用実績あり</text>
+<path data-state="experience" d="M680 450 V349" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="688" y="443" font-size="12" fill="#285987">指示書の公開：実績あり</text>
+<path data-state="experience" d="M800 120 V221" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="792" y="150" text-anchor="end" font-size="12" fill="#285987">dots読取：実績あり</text>
+<path data-state="experience" d="M930 120 V221" fill="none" stroke="#241f1a" stroke-width="2" marker-end="url(#arrow4)"/>
+<text x="922" y="168" text-anchor="end" font-size="12" fill="#285987">PR提出：実績あり</text></svg></div>
+<div class="current-note"><b>図を読むときの現在の約束</b><p>Desklyは画面・共通受付・台帳への入口。ローカルAI、ローカルセッション、Claude Desktop、Claudeスマホからの記録は、Deskly単体でも必要です。many-ai-cliやagent-boardは、単独利用の必須条件にしません。</p><p>図のGitHubは最初の記録先。GitHubを使えない人のGitBucketや自社VPSへの組込みは、後続で調べます。入口の共通契約と、記録先・配置先を差し替える境界を先に用意します。MCPを用意しただけで、スマホを含む実アプリの接続が完了したとは扱いません。</p><p>元の10月6日の配置と関係を保持し、現在の完成状況を文字と色で重ねています。状態は2026年10月8日の記録に基づき、常時更新される監視表示ではありません。「実績あり」はこの案件経路の実績であり、全機能の完成や他の外部AIの接続成功を保証しません。未完成・未確認の接続は破線です。黒い線は本人の操作経路で、連携完成の表示ではありません。詳細な証拠と残件は下の「最新の現在地」で確認します。</p></div>
+</section>
+<section id="goal"><h2>2. 目指す使い方と道具の役割</h2>
+<div class="summary-grid"><article><h3>Desklyだけで使う</h3><p>連絡と案件を台帳へ記録する。画面、CLI、対応するAIのMCPから同じ仕事を扱う。管理する人が全体を見られる。</p></article><article><h3>agent-boardだけで使う</h3><p>GitHubの同じIssueで依頼を追う。指示・資料・共通ルールを固定した版で渡す。Desklyがなくても成立する。</p></article><article><h3>組み合わせて使う</h3><p>Desklyで受付・表示・本人と権限を確認し、agent-boardで指示と根拠を共有する。作業AIと人の受入まで同じ案件番号で追う。</p></article></div>
+<div class="tablewrap"><table><thead><tr><th>道具・システム</th><th>受け持つこと</th><th>つなぎ方</th></tr></thead><tbody>
+<tr><td>Deskly</td><td>人の画面、連絡・案件、次の行動、共通受付</td><td>本人・権限・明示操作・履歴を一つの契約で扱う</td></tr>
+<tr><td>各人のAIアプリ・CLI・セッション</td><td>会話や作業の入口</td><td>同じ台帳へ読む・記録する。入口別の状態台帳を作らない</td></tr>
+<tr><td>many-ai-cli</td><td>ローカルAIとセッションの操作・実行</td><td>依頼と報告を担当セッションへ結ぶ。Desklyの必須依存にはしない</td></tr>
+<tr><td>agent-board</td><td>指示書、共通ルール、レビュー、根拠の所在</td><td>共通契約とDeskly追加仕様を分ける。指示は固定commitで渡す</td></tr>
+<tr><td>GitHub／作業リポ</td><td>新規AI依頼の状態、コード、Issue・PR・CI</td><td>依頼のIssueと資料のrepo、実際の変更先repoを区別する</td></tr>
+<tr><td>チャット・受け箱・通知中継</td><td>指示と返事を届ける</td><td>状態の正本を持たず、送信・受付・完了を別々に記録する</td></tr>
+<tr><td>docsweep／作業MD</td><td>具体的な作業、検証、残作業</td><td>この設計の要件と、各repoの実行MDを参照で結ぶ</td></tr>
+<tr><td>工数・業務アプリ・メール・予定・人の台帳</td><td>各サービスが所有する元の記録</td><td>元サービスを正本に保ち、案件・担当・期間・根拠へ参照で結ぶ。連携完成は未確認</td></tr>
+<tr><td>doorpost・死活監視など</td><td>共通の受け口や、周辺の通知・監視</td><td>必要な部品・報告を使う。新しい案件台帳を増やさない</td></tr>
+</tbody></table></div>
+</section>
+<section id="contract"><h2>3. 台帳・番号・権限の約束</h2>
+<div class="tablewrap"><table><thead><tr><th>項目</th><th>現在の方針</th><th>残る確認</th></tr></thead><tbody>
+<tr><td>新規のGitHub経由のAI依頼</td><td>作業対象repoのIssueを状態の正本にし、Projectsは同じIssueを一覧にする</td><td>Desklyの受付・表示・書込みを改訂された共通契約へ適合させる</td></tr>
+<tr><td>既存のDeskly案件と連絡</td><td>既存台帳とID・履歴を維持する。連絡の状態語は6つ</td><td>新規受付との関連と、状態の所有者を項目ごとに明示する。一括移行は未決定</td></tr>
+<tr><td>案件番号</td><td>個人ゾーンの新規番号は #P-YYYYMMDD-NNN。Issue/PR番号とは別</td><td>採番ツールの実装・取り込みと、実運用の発行元切替を分ける</td></tr>
+<tr><td>本人・ゾーン・案件権限</td><td>個人と会社はデータ・認証・許可を分ける。各人の操作を記録する</td><td>一般の利用者、スマホ、複数案件で見える範囲を実機検収する</td></tr>
+<tr><td>保存先と配置先</td><td>GitHubでの初回運用を先に確認する。共通の入口から記録先を分離する</td><td>GitBucketやVPS内組込みの互換・権限・履歴・復旧は後続検討</td></tr>
+</tbody></table></div>
+<p>共通契約はagent-boardのCONTRACT、Deskly固有の追加はDESKLYを参照する。Deskly側の古い引き継ぎ書に「管理サービスが依頼状態の正本」と残る箇所は、最新契約との不一致として次の作業へ渡す。全体の方針が決まったことと、全実装が適合したことを分ける。</p>
+</section>
+<section id="latest"><h2>4. 最新の現在地 — 2026年10月8日照合</h2>
+<p>ローカル文書とGitHubのPR状態を照合しました。提出済み・取り込み済み・本番稼働・実アプリ検収は、それぞれ別の状態です。</p>
+<div class="tablewrap"><table><thead><tr><th>対象</th><th>確認したこと</th><th>次に必要なこと／根拠</th></tr></thead><tbody>
+<tr><td>共通契約と採番</td><td>CONTRACT第3版とDeskly追加仕様がある。採番ツールのPRは取り込み済み（GitHubで確認）</td><td>実運用の発行元は未切替。<a href="local/reference_deskly-design-sources.md#agent-board">契約と10/8の実行記録</a></td></tr>
+<tr><td>DesklyのGitHub受付</td><td>AI入口・計画画面を合わせた単一統合候補をDraftで提出、未merge。レビュー指摘とWindowsのDB終了処理5件を修正。最終報告を回収し、同じ候補の全5CI checksとWindows全1,944検査が成功</td><td>固定候補から総合監査へ進む。画面・実機・実環境の総合受入は未実施。<a href="local/plan_deskly-grand-design.md">全体の実行入口</a> ／ <a href="local/plan_deskly-github-mcp-intake.md">受付の既存MD</a></td></tr>
+<tr><td>Deskly単独の複数AI入口</td><td>CLI・stdio・Remote MCPと公式SDKを統合候補へ反映。6種類のエラー理由の欠落を修正し、公開CIとWindowsの3経路の合成回帰が成功</td><td>固定候補で総合確認する。実行側制限は維持。画面・ローカルAI・Claude Desktop・スマホの実機確認は未実施</td></tr>
+<tr><td>中核の作り直し・移行</td><td>共通中核と配置先別の部品という採用方針がある。手元には別作業の未確定変更がある</td><td>親計画と移行の検収を確認。<a href="local/plan_deployment-target-choice.md">作り直しの親MD</a></td></tr>
+<tr><td>既存案件での価値確認</td><td>実案件を使う試用計画がある。試用完了・公開OSSの証跡表示の受入は今回確認していない</td><td><a href="local/plan_deskly-real-case-pilot.md">既存の試用MD</a>で進める。画面の価値確認とGitHub受付の完成を分ける</td></tr>
+<tr><td>バックログ・WBS・ガント</td><td>専有実装と共有差分を単一候補へ統合。専用branchのCIには7失敗があるが、修正後統合候補の公開CIは全5checks成功。実画面は未確認</td><td>固定統合候補で総合確認を行う。WindowsのVPS終了処理も修正後の正常終了を確認。<a href="local/plan_deskly-grand-design.md">手元の実行入口</a>から非公開の依頼と根拠を辿り、旧版へ二重実装しない</td></tr>
+<tr><td>返事の受け箱・担当AIへの通知</td><td>最小版の計画はある。自動捕捉・担当AIの起動まで完成した証拠は今回確認していない</td><td><a href="local/reference_deskly-design-sources.md#bridge">many-ai-cliの既存計画</a>で進める</td></tr>
+<tr><td>配備・共有・実アプリ</td><td>既存運用と新しいGitHub受付の受入は別。新受付の本番稼働は今回確認していない</td><td>個人／会社の区画、本人認証、権限、実接続、復旧、スマホ、無料枠実測を検収</td></tr>
+</tbody></table></div>
+<div class="current-note"><b>文書の食い違いも、作業として管理する</b><p>古い引き継ぎ書の正本、10月6日の進捗、手元のcheckoutとGitHub側の実装基準は同一ではありません。どれか一つを最新と思い込まず、根拠の版・確認日・未確認範囲を索引へ残します。</p></div>
+</section>
+<section id="work"><h2>5. この設計から、MDで作業する</h2>
+<p><a href="local/plan_deskly-grand-design.md"><b>作業の入口：plan_deskly-grand-design.md</b></a>。各repoの既存計画をここから開く。実装のC番号や案件番号を振り直さず、担当repoのMDへ具体的な変更と検証を残す。</p>
+<div class="current-note"><b>基本実装はdots、最後に総合チェックとまとめたバグ修正</b><p>dotsが機能の実装と必要な確認を進め、作業branchとDraft PRへ提出します。手元AIは途中では担当・作業範囲・進捗・依存・停止理由を確認し、一つ直すたびの細かなテストやレビューを繰り返しません。通常の実装判断で本人への確認を挟まず、許可された範囲を進めます。</p><p>採用した機能がそろったら候補の版を固定し、監査skill <code>audit-prompts</code>の最高強度「ハイ」で総合チェックを実施する予定です。アプリ監査の正典<code>audit_app.md</code>を使い、全体の実装・画面・登録から更新と再開までの操作・権限・スマホ・復旧をまとめて確認します。実施範囲・結果・未確認を記録し、実機で見ていないものを合格にはしません。現時点では監査予定であり、監査済みではありません。</p><p>見つかったバグを一つの修正一覧にまとめてdotsへ返し、修正後の候補を総合再確認します。必須の不具合がなくなるまでこの流れを循環させ、最後に必要な本人操作と受入をまとめます。一般的な改善案を見つけるたびに完成条件を増やさず、実装提出・総合チェック・本人受入・merge・配備を区別します。</p></div>
+<div class="tablewrap"><table><thead><tr><th>順番</th><th>作業</th><th>進められる条件</th></tr></thead><tbody>
+<tr><td>最初・C2</td><td>既存の受付PRの優先残件をdotsが修正し、改訂契約への対応と後続タスクを具体化する</td><td>既存番号・担当・許可を継続。修正と必要な確認をdotsが提出し、後続の範囲と担当が分かる。最終受入はC5へまとめる</td></tr>
+<tr><td>次・C3</td><td>共通受付、Deskly単独のAI入口、案件画面とバックログ・WBS・ガントを完成させる</td><td>既存の実行計画と新版の基盤条件に従う。再送・部分失敗・権限取消・履歴をdotsが確認し、既存案件での試用につなぐ。無料枠実測を先行する既存決定を保持する</td></tr>
+<tr><td>分離できた範囲・C4</td><td>採番の発行元切替、返事の受け箱、担当AIへの通知</td><td>C2で責務・契約・編集範囲を分離できた部分だけC3と並行候補にする。共有Git・スキーマ・認証・外部操作は直列。AI巡回や状態の二重管理を増やさない</td></tr>
+<tr><td>機能がそろったら・C5</td><td>強度ハイの総合監査とまとめたバグ修正。スマホ・共有・配置先・復旧を検収する</td><td>候補の版を固定し、全体の操作と権限境界を確認する。無料枠や代替先の判断に実測根拠があり、復元・切戻しと必要な本人受入まで確認する</td></tr>
+</tbody></table></div>
+<p>実行順序はC2 → C3 → C5。C4は分離できた範囲だけ並行候補です。終了条件は、採用契約と必須要件への適合、総合監査で見つかった必須の不具合の解消、各AI入口・共有権限・実接続・配置先の実測・復旧・本人受入の証拠がそろうこと。採番・受け箱・担当通知も必要部分を検収し、全体終了時に残す範囲があれば本人の明示判断を記録します。詳細は入口MDの「完了条件」へ集約します。既存MDの工程ごとの手元詳細テストは今回の本人方針に従って最後へまとめ、機能仕様と実運用前の必須条件は保持します。</p>
+<p>同じ原因のCI失敗2回、重大指摘が2回の修正後も残る、1工程90分超過は、手元AIが原因・指示・担当・分割を見直す節目。許可内で再依頼し、通常の失敗だけで本人へ判断を戻しません。範囲外・契約矛盾・未許可の依存/費用/認証/サービス・本人操作が必要な場合は、回答済みの開始前方針で解決できるか確認し、解決策が許可を超える時だけ材料をまとめて戻します。独立した許可済みタスクは進め、停止を完了とは数えません。</p>
+<p>GitBucket対応・VPS内組込みは未決定事項として入口のMDで追う。管理方式を決めるための資料整理と、製品の実装・実送信・配備の開始は別の作業です。</p>
+<p>この計画の記載だけでは、指示の公開・外部送信・merge・配備・実データ移行・採番切替・アカウントや権限変更を新たに許可しません。既存の許可は対象案件と操作範囲を照合して使います。</p>
+<h3 id="build-order">部品を作る順番と、並行できるところ</h3>
+<div class="current-note"><b>新しい開発はprivateで、個人用の完成を先に進める。</b><p>実装branch・Draft PR・詳細レビューは非公開の開発repo、固定指示と案件記録は非公開の管理repo、実デプロイと認証情報の管理は本人と手元AI側で扱います。既存の公開desklyは当面維持し、新しい実装のOSS反映と販売は本人の実利用後に判断します。公開する場合は汎用コードと一般向け資料の対象範囲を確認し、履歴・PR本文/コメント・添付・CIログも対象に確認します。<a href="#development-policy">現在の開発・公開方針</a>に従い、開発許可と公開反映の判断を分けます。</p></div>
+<div class="current-note"><b>dotsは配備できる部品と手順を作る。実際のデプロイはこちら側で行う。</b><p>Cloudflare・VPSとも、dotsの成果は採用範囲の実装・配置先別部品・秘密を含まない設定例・配備/実測/復旧/切戻し手順を含む開発用branchとDraft PRです。実環境への配備、環境と秘密の設定、実測、配備後の総合確認は本人と手元AI側が担当します。部品の提出とデプロイ済み・実環境の受入済みを分けて記録します。</p></div>
+<div class="current-note"><b>並行する部品と担当の選定は、手元AIへ一任済み。</b><p>開始前に必要な確認と本人判断は、<a href="local/review_deskly-start-checks_2026-10-08.html">開始前の確認・判断HTML</a>へ集約しました。開発用branch・Draft PRまでのA1承認を受領済みです。途中の判断を減らす追加方針A2〜A4（確認済み無料OSS部品の採用・private基盤先行・無料枠不適合時の代替開発）も、2026-10-08にすべておすすめ案で承認済みです。承認済みの方針は聞き直さず、AI側の確認と最後の公開・運用判断を分けます。引き継ぐAIは実行MDとこの資料を開き、実際の回答と既存の許可を照合して進めます。</p></div>
+<p><b>共通の前提をそろえる → 分離できる部品をdotsの別担当が並行実装 → 候補を合流 → 最後に総合監査。</b> 日数の見積りではなく、着手条件と依存関係を示した図です。現在ある実装を確認して使い、完成部分を作り直しません。下の枝は並行候補であり、今すべてを同時着手できると確認済みではありません。</p>
+<div class="diagram-wrap build-flow"><svg viewBox="0 0 1000 575" role="img" aria-labelledby="buildTitle buildDesc">
+<title id="buildTitle">dotsの部品別並行実装と総合監査までの依存関係</title>
+<desc id="buildDesc">最初に既存PRの残件と採用契約、基準版、共通APIと認証の前提をそろえる。その後、共通受付、Rust CLIとMCP、配置先別部品と画面、別repoの採番と通知を担当分離できた範囲で並行する。画面と計画機能は必要な保存APIと配置先別部品、privateのレビュー済み新版基準を待つ。機能がそろった候補を合流し、最高強度の総合監査とまとめたバグ修正へ進む。</desc>
+<defs><marker id="buildArrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#837a6c"/></marker></defs>
+<rect x="15" y="185" width="205" height="170" rx="14" fill="#fff0da" stroke="#855014" stroke-width="2"/>
+<text x="117" y="214" text-anchor="middle" class="flow-stage">最初・C2</text>
+<text x="117" y="241" text-anchor="middle" class="flow-title">既存残件と共通前提</text>
+<text x="117" y="267" text-anchor="middle" class="flow-detail">PR修正・採用契約・基準版</text>
+<text x="117" y="291" text-anchor="middle" class="flow-detail">API・認証・変更範囲を確定</text>
+<text x="117" y="319" text-anchor="middle" class="flow-detail">既存の完成部分を再利用</text>
+<path class="build-arrow" d="M220 270 H240 V75 H260"/>
+<path class="build-arrow" d="M240 270 V210 H260"/>
+<path class="build-arrow" d="M240 270 V345 H260"/>
+<path class="build-arrow" d="M240 270 V480 H260"/>
+<rect x="265" y="20" width="260" height="110" rx="12" fill="#e8f0fc" stroke="#285987"/>
+<text x="395" y="47" text-anchor="middle" class="flow-stage">C3・受付担当</text>
+<text x="395" y="73" text-anchor="middle" class="flow-title">共通受付・GitHub連携</text>
+<text x="395" y="98" text-anchor="middle" class="flow-detail">認可・再送・部分失敗・履歴</text>
+<text x="395" y="117" text-anchor="middle" class="flow-detail">共通認証の変更は一担当が所有</text>
+<rect x="265" y="155" width="260" height="110" rx="12" fill="#e8f0fc" stroke="#285987"/>
+<text x="395" y="182" text-anchor="middle" class="flow-stage">C3・AI入口担当</text>
+<text x="395" y="208" text-anchor="middle" class="flow-title">Rust CLI・MCP</text>
+<text x="395" y="233" text-anchor="middle" class="flow-detail">固定したAPIで端末側を実装</text>
+<text x="395" y="252" text-anchor="middle" class="flow-detail">実接続は受付・OAuth等の後</text>
+<rect x="265" y="290" width="260" height="110" rx="12" fill="#e8f0fc" stroke="#285987"/>
+<text x="395" y="317" text-anchor="middle" class="flow-stage">C3・配置先部品担当</text>
+<text x="395" y="343" text-anchor="middle" class="flow-title">Cloudflare・VPSの部品</text>
+<text x="395" y="368" text-anchor="middle" class="flow-detail">既存の実装済み範囲を照合</text>
+<text x="395" y="387" text-anchor="middle" class="flow-detail">共通API確定後、未完部分だけ</text>
+<rect x="550" y="290" width="235" height="110" rx="12" fill="#fff0da" stroke="#855014"/>
+<text x="667" y="317" text-anchor="middle" class="flow-stage">前提がそろってから・C3</text>
+<text x="667" y="343" text-anchor="middle" class="flow-title">案件画面・WBS・ガント</text>
+<text x="667" y="368" text-anchor="middle" class="flow-detail">保存API・配置先部品が必要</text>
+<text x="667" y="387" text-anchor="middle" class="flow-detail">計画機能は新版レビュー基準も必要</text>
+<path class="build-arrow" d="M525 345 H545"/>
+<rect x="265" y="425" width="260" height="110" rx="12" fill="#e8f0fc" stroke="#285987"/>
+<text x="395" y="452" text-anchor="middle" class="flow-stage">C4・別repoの担当</text>
+<text x="395" y="478" text-anchor="middle" class="flow-title">採番準備・受け箱・担当通知</text>
+<text x="395" y="503" text-anchor="middle" class="flow-detail">契約と編集範囲を分離できたら</text>
+<text x="395" y="522" text-anchor="middle" class="flow-detail">実運用切替は別の許可が必要</text>
+<path class="build-arrow" d="M525 75 H802 V250 H815"/>
+<path class="build-arrow" d="M525 210 H802"/>
+<path class="build-arrow" d="M785 345 H802 V290 H815"/>
+<path class="build-arrow" d="M525 480 H802 V310 H815"/>
+<rect x="820" y="180" width="165" height="185" rx="14" fill="#e8f4ec" stroke="#23633d" stroke-width="2"/>
+<text x="902" y="209" text-anchor="middle" class="flow-stage">最後・C5</text>
+<text x="902" y="237" text-anchor="middle" class="flow-title">候補を合流</text>
+<text x="902" y="263" text-anchor="middle" class="flow-detail">強度ハイの総合監査</text>
+<text x="902" y="290" text-anchor="middle" class="flow-detail">バグをまとめてdotsへ</text>
+<text x="902" y="317" text-anchor="middle" class="flow-detail">修正 → 総合再確認</text>
+<text x="902" y="344" text-anchor="middle" class="flow-detail">必須条件を満たして受入</text>
+<text x="20" y="566" class="flow-detail">青い箱：担当分離できれば並行候補　橙の箱：前提をそろえる　矢印：着手・合流の依存関係（所要時間ではない）</text>
+</svg></div>
+<p>最初は受付・AI入口・別repoの周辺部品から、編集ファイルが重ならない2〜3担当を候補にします。dotsの同時実行能力は受付時に確認し、配置先部品や画面は担当の空きと前提の成立に合わせて着手します。保存/API/認証/スキーマを複数担当が同時変更する依頼にはしません。</p>
+<p>画面の設計や契約の調査は前提待ちの間に進められますが、計画機能はA3承認に従い、レビュー済みprivate新版の基準SHAと必要部品を固定して先行します。存在しない基盤をあるものとして実装を始めません。mergeや公開が必要な合流点は、具体的な成果と必要操作をそろえて扱います。機能ごとの細かな手元テストを挟まず、最後の総合監査へまとめる方針は維持します。</p>
+</section>
+<section id="maintenance"><h2>6. 次から探さず、ここを更新する</h2>
+<ol class="maintenance"><li><b>入口を固定する。</b>READMEとAIガイドからこのHTMLを開く。全体設計の最新版を日付入りの別HTMLとして増やさない。</li>
+<li><b>着手前に照合する。</b>関係する契約・作業MD・PRの版を確認する。根拠が変わっていたら、現在地と不一致を先に更新する。</li>
+<li><b>実行は担当MDへ。</b>変更対象、担当、許可範囲、受入条件、証拠を残す。同じ進捗を別の台帳へ手入力しない。</li>
+<li><b>報告前に戻す。</b>方針・関係・現在地に差が出たら、このHTMLと作業入口へ反映する。詳細ログは元資料に残し、確認日と固定した根拠を索引へ記録する。</li>
+<li><b>リンクと根拠の更新を点検する。</b><code>python scripts/check-grand-design.py --local</code>でリンクと根拠ファイルの変更を検出する。変更が出たら内容を読み直して設計へ反映し、索引の確認済みハッシュを更新する。</li></ol>
+<p>役目を終えた資料は各作業キューのarchiveへ移し、旧入口には案内を残します。古い日付だけを理由に移さず、現役の契約・未完了の実行MD・決定の根拠を確認します。移動した資料の相対リンクと根拠索引も更新します。</p><p>この点検は手動実行です。定期AIの巡回や自動書換えは行いません。PR・CI・本番・実アプリの状態は、根拠ファイルの変更検出だけでは確認できないため、該当作業の節目で別に確認します。</p>
+</section>
+<section id="sources"><h2>7. 詳細資料の持ち場</h2>
+<p>全体の方針と関係はこのHTML。具体的な作業は<a href="local/plan_deskly-grand-design.md">入口MDと各repoの計画</a>。契約・根拠・過去資料の所在は<a href="local/reference_deskly-design-sources.md">根拠索引</a>。Obsidianには振り返りと案内を置く。</p>
+<p>公開ソースには旧Python版とTypeScriptの共有中核・Rust CLIの基盤があり、非公開の開発repoで進む新しいGitHub受付とは実装段階が違います。公開ソースに新しい受付が実装済みと読まない。<a href="reference_team-dashboard.md">既存の案件管理設計</a>も、適用範囲を確認して読む。</p>
+<p>元の10月6日の見取り図と旧工程は<a href="local/archive/design_deskly-next-roadmap_2026-10-03.html#map-all">旧資料</a>に保存。今後の全体方針と最新の現在地は、この固定入口だけを更新します。</p>
+</section>
+</main><footer><p>Deskly 全体設計 · 固定入口 · 更新・照合 2026-10-08</p></footer>
+</body></html>
