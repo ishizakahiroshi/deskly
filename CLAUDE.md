@@ -49,7 +49,7 @@ deskly/
 ├── tests/     — テスト（合成データだけ）
 ├── deploy/    — サーバーへ置くもの（compose・Dockerfile・install-release.sh）
 ├── docs/      — 公開する資料（docs/local/ は作業ノートで、追跡しない）
-└── scripts/   — secrets-scan など（scripts/local/ は接続先に依存するので追跡しない）
+└── scripts/   — doxguard 実行アダプタ（secrets-scan.dual / staged）など（scripts/local/ は接続先に依存するので追跡しない）
 ```
 
 ## 主要コマンド
@@ -81,11 +81,11 @@ macOS / Linux では `.venv\Scripts\python` を `.venv/bin/python` に読み替�
 
 書く瞬間の責務（固有名詞の一般化・fixture は合成データ等）は上記「AI 作業共通ルール」の参照先に従う。このリポジトリ固有の配線は以下:
 
-- scanner: `scripts/secrets-scan.mjs`（手動実行: `node scripts/secrets-scan.mjs --staged --block`）
+- scanner: doxguard（手動実行: `node scripts/secrets-scan.dual.mjs --native-only --staged`。CI は gitleaks も併用）
 - layer 2: pre-commit hook（`.githooks/pre-commit` 経由・`git config core.hooksPath .githooks` で有効化済み）
 - layer 3: `.github/workflows/secrets-scan.yml`（CI backstop）
 - layer 4: release ゲート
-- env (full coverage に必要・未設定なら構造 regex のみで継続): `KB_ROOT` / `FAMILY_ROOT`。設定詳細は `scripts/secrets-scan.mjs` の冒頭コメント
+- env (full coverage に必要・未設定なら構造 regex のみで継続): `DOXGUARD_CONFIG`（private watchlist への参照）
 
 ## 関連ドキュメント
 
