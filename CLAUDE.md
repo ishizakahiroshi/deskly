@@ -12,7 +12,8 @@ deskly は、開発・営業・連絡を案件ごとに見渡すための道具�
 
 ## 設計の決まり（変えないこと）
 
-- 1 つの事実を書き換える場所は 1 か所。deskly 所有の管理項目と外部所有の記録を区別し、同じ状態を二重管理しない。外部サービスへの書き込みは今回の拡張に含めない
+- 1 つの事実を書き換える場所は 1 か所。deskly 所有の管理項目と外部所有の記録を区別し、同じ状態を二重管理しない。外部サービスへの書き込みは今回の拡張に含めない（例外は次の行の AI への依頼の受け渡しだけ）
+- AI への依頼の受け渡しは対象に入れる（2026-10-20 本人決定）。どこから始めた依頼も AI 依頼の台帳に集め、台帳が担当の AI を起こし（webhook・Slack の案件スレッドへの投稿）、返事は依頼を始めた窓口へ戻す。AI を自動で起こすのは、本人が最初に承認した範囲の中だけ。範囲の外は止めて本人の番にする。起こすのは通常のプログラムで、AI を常駐させない。全体の位置づけは `docs/design_deskly-grand-design.html` の C4
 - 連絡の状態は 6 つの言葉だけ: `下書き`・`送信済み`・`回答待ち`・`対応中`・`完了`・`送らない`。「誰の番」は、この状態と案件の台帳の状態の組み合わせで出す（新しい言葉を作らない）
 - 一覧は案件ごとに 1 行。案件の無い連絡は、それだけで 1 行
 - 新しい案件管理は workspace・project・member の安定 ID で区切る。表示名や既存の `Contact.project` 文字列を、権限・結合のキーとして流用しない
@@ -27,7 +28,7 @@ deskly は、開発・営業・連絡を案件ごとに見渡すための道具�
 ## やらないこと（スコープ外）
 
 - 外部台帳を自動複製して deskly の案件台帳へ置き換えること、外部サービスへの双方向同期
-- チャット・メールの送信と、人が話しかけずに AI が動く機能（将来の方向として保留中）
+- 人あての連絡（チャット・メール）の送信（将来の方向として保留中）
 - 会計・課金・ログの閲覧
 - 多言語の画面（まず日本語）
 
@@ -88,11 +89,20 @@ macOS / Linux では `.venv\Scripts\python` を `.venv/bin/python` に読み替�
 - 作業ノート（plan 等）は `docs/local/` に置き、追跡しない
 - 依存を足すときは、本体の依存を増やさず extra に入れる
 
+## 全体設計の正本
+
+製品方針・全体構成は [グランドデザイン](docs/design_deskly-grand-design.html) を正本とする。
+設計・計画整理と実装・レビュー・検収の着手前／報告前に対象資料を照合し、作業は `docs/local/plan_deskly-grand-design.md` から進め、保守手順は正本の6節に従う。
+開始・再開も同じ固定入口を使い、看板の照合と引き継ぎの扱いは同実行計画冒頭の再開規約に従う（recapは開始必須にしない）。
+個別設計の実装範囲と全体の最終ゴールを区別し、方針変更は正本へ反映する。
+
 ## Obsidian artifacts
 
 If `docs/obsidian/README.md` exists, use it as an index for related knowledge artifacts.
 Use the repository-relative `docs/obsidian` entry. Do not write to a central absolute
 path and do not silently fall back to `docs/local` when the entry is missing.
+
+Obsidianは振り返り・監査・検討の経緯と公開正本への案内に使い、製品設計の正本を置かない。
 
 ## secrets-scan（このリポジトリの配線）
 
@@ -110,6 +120,7 @@ path and do not silently fall back to `docs/local` when the entry is missing.
 |---|---|
 | ユーザー向け README | `README.md` |
 | Codex/他 AI 用入口 | `AGENTS.md` |
+| 製品方針・全体構成・保守手順の正本 | [グランドデザイン](docs/design_deskly-grand-design.html) |
 | 案件管理への拡張・最小画面・共有開始条件 | [チームダッシュボード設計](docs/reference_team-dashboard.md)（採用設計と未実装範囲） |
 | ローカル作業ノート（非公開） | `docs/local/`（存在する場合） |
 | Obsidian knowledge artifacts | `docs/obsidian/`（存在する場合。作業キューではない） |
